@@ -1,11 +1,11 @@
 /*
- * shot — скриншот с мини-редактором.  C99, Xlib + Xft + zlib.
+ * xsnip — скриншот с мини-редактором.  C99, Xlib + Xft + zlib.
  *
- *   shot -s -o /tmp/a.png   выбрать область, отредактировать, сохранить
- *   shot -s                 выбрать область, отредактировать, в буфер
- *   shot -o /tmp/a.png      весь экран -> редактор -> файл
- *   shot                    весь экран -> редактор -> буфер
- *   shot -d 3               задержка перед снимком
+ *   xsnip -s -o /tmp/a.png   выбрать область, отредактировать, сохранить
+ *   xsnip -s                 выбрать область, отредактировать, в буфер
+ *   xsnip -o /tmp/a.png      весь экран -> редактор -> файл
+ *   xsnip                    весь экран -> редактор -> буфер
+ *   xsnip -d 3               задержка перед снимком
  *
  *   --colors c1,c2,c3,c4,c5   палитра (#rrggbb), по умолчанию красный,
  *                             зелёный, жёлтый, белый, чёрный
@@ -16,7 +16,7 @@
  *   --pos center|tl|tr|bl|br  положение окна редактора
  *
  * Настройки (цвет, размеры, инструмент, тип и место окна) хранятся в
- * $XDG_CONFIG_HOME/shot/config или ~/.config/shot/config.
+ * $XDG_CONFIG_HOME/xsnip/config или ~/.config/xsnip/config.
  */
 
 #define _GNU_SOURCE
@@ -66,7 +66,7 @@ static const char *DEF_COLORS[NCOLORS] = {
 
 static int x_error_handler(Display *d, XErrorEvent *ev) {
     (void)d;
-    if (getenv("SHOT_DEBUG"))
+    if (getenv("XSNIP_DEBUG"))
         fprintf(stderr, "X error: opcode=%d code=%d\n", ev->request_code, ev->error_code);
     return 0; /* не падаем: часть запросов гонки с WM */
 }
@@ -85,7 +85,7 @@ static XIC xic_editor;
 static void die(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    fputs("shot: ", stderr);
+    fputs("xsnip: ", stderr);
     vfprintf(stderr, fmt, ap);
     fputc('\n', stderr);
     va_end(ap);
@@ -232,9 +232,9 @@ static void config_path(char *buf, size_t n) {
     const char *xdg = getenv("XDG_CONFIG_HOME");
     const char *home = getenv("HOME");
     if (xdg && *xdg)
-        snprintf(buf, n, "%s/shot/config", xdg);
+        snprintf(buf, n, "%s/xsnip/config", xdg);
     else
-        snprintf(buf, n, "%s/.config/shot/config", home ? home : ".");
+        snprintf(buf, n, "%s/.config/xsnip/config", home ? home : ".");
 }
 
 static void cfg_defaults(cfg_t *c) {
@@ -427,12 +427,12 @@ static int png_write_file(const img_t *im, const char *path) {
     unsigned char *data;
     size_t len;
     if (png_encode(im, &data, &len) != 0) {
-        fprintf(stderr, "shot: не смог собрать PNG\n");
+        fprintf(stderr, "xsnip: не смог собрать PNG\n");
         return -1;
     }
     FILE *f = fopen(path, "wb");
     if (!f) {
-        fprintf(stderr, "shot: %s: %s\n", path, strerror(errno));
+        fprintf(stderr, "xsnip: %s: %s\n", path, strerror(errno));
         free(data);
         return -1;
     }
@@ -563,7 +563,7 @@ static void clipboard_put_png(const unsigned char *data, size_t len) {
     pid_t pid = fork();
     if (pid < 0) {
         free(copy);
-        fprintf(stderr, "shot: fork: %s\n", strerror(errno));
+        fprintf(stderr, "xsnip: fork: %s\n", strerror(errno));
         return;
     }
     if (pid == 0) {
@@ -703,7 +703,7 @@ static rect_t select_area(img_t *shot) {
     Cursor cur = XCreateFontCursor(dpy, XC_crosshair);
     XDefineCursor(dpy, s.win, cur);
 
-    XStoreName(dpy, s.win, "shot-select");
+    XStoreName(dpy, s.win, "xsnip-select");
     XMapRaised(dpy, s.win);
     XSync(dpy, False);
     XSetInputFocus(dpy, s.win, RevertToPointerRoot, CurrentTime);
@@ -1197,7 +1197,7 @@ static void editor_paint(editor_t *e) {
     draw_str(e->draw, 0x202020, 13, lab_x + (lab_w - tw) / 2,
              (PANEL_H - font_get(13)->ascent - font_get(13)->descent) / 2, lbl);
 
-    if (getenv("SHOT_DEBUG")) {
+    if (getenv("XSNIP_DEBUG")) {
         for (int i = 0; i < e->nbtn; i++)
             fprintf(stderr, "btn id=%d x=%d y=%d w=%d h=%d\n", e->btns[i].id,
                     e->btns[i].x, e->btns[i].y, e->btns[i].w, e->btns[i].h);
@@ -1346,7 +1346,7 @@ static void editor_start_text(editor_t *e, int wx, int wy) {
 }
 
 static void editor_commit_text(editor_t *e) {
-    if (getenv("SHOT_DEBUG"))
+    if (getenv("XSNIP_DEBUG"))
         fprintf(stderr, "commit '%s' len=%d at %d,%d\n", e->textbuf, e->text_len,
                 e->text_x, e->text_y);
     if (e->text_len > 0) {
@@ -1384,10 +1384,10 @@ static void editor_make_ic(Window win) {
 }
 
 static void editor_map_prepare(editor_t *e) {
-    XClassHint ch = {(char *)"shot", (char *)"Shot"};
+    XClassHint ch = {(char *)"xsnip", (char *)"Xsnip"};
     XSetClassHint(dpy, e->win, &ch);
-    XStoreName(dpy, e->win, "shot");
-    XSetCommand(dpy, e->win, (char *[]){(char *)"shot", NULL}, 1);
+    XStoreName(dpy, e->win, "xsnip");
+    XSetCommand(dpy, e->win, (char *[]){(char *)"xsnip", NULL}, 1);
 
     Atom wt = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE", False);
     Atom val = XInternAtom(dpy,
@@ -1630,7 +1630,7 @@ static void editor_run(editor_t *e) {
         case KeyPress: {
             KeySym ks = 0;
             char buf[64];
-            if (getenv("SHOT_DEBUG"))
+            if (getenv("XSNIP_DEBUG"))
                 fprintf(stderr, "keypress state=0x%x text_active=%d\n", ev.xkey.state,
                         e->text_active);
             if (e->text_active) {
@@ -1638,7 +1638,7 @@ static void editor_run(editor_t *e) {
                 if (xic_editor) {
                     Status st = 0;
                     n = Xutf8LookupString(xic_editor, &ev.xkey, buf, sizeof(buf) - 1, &ks, &st);
-                    if (getenv("SHOT_DEBUG"))
+                    if (getenv("XSNIP_DEBUG"))
                         fprintf(stderr, "  xim: st=%d n=%d\n", st, n);
                     if (!(st & (XLookupChars | XLookupBoth)))
                         n = 0;
@@ -1666,14 +1666,14 @@ static void editor_run(editor_t *e) {
                     }
                     break;
                 }
-                if (getenv("SHOT_DEBUG"))
+                if (getenv("XSNIP_DEBUG"))
                     fprintf(stderr, "  ks=0x%lx n=%d buf='%.*s'\n", ks, n, n > 0 ? n : 0, buf);
                 if (n > 0) {
                     if (e->text_len + n < TEXT_MAX - 1) {
                         memcpy(e->textbuf + e->text_len, buf, (size_t)n);
                         e->text_len += n;
                         e->textbuf[e->text_len] = 0;
-                        if (getenv("SHOT_DEBUG"))
+                        if (getenv("XSNIP_DEBUG"))
                             fprintf(stderr, "  textbuf='%s'\n", e->textbuf);
                         editor_blit_canvas(e);
                         XFlush(dpy);
@@ -1843,7 +1843,7 @@ int main(int argc, char **argv) {
             usage(stdout);
             return 0;
         } else if (!strcmp(a, "-v") || !strcmp(a, "--version")) {
-            printf("shot 2.0 (C, Xlib+Xft+zlib)\n");
+            printf("xsnip 2.0 (C, Xlib+Xft+zlib)\n");
             return 0;
         } else {
             usage(stderr);

@@ -4,15 +4,15 @@ set -u
 export DISPLAY=:99
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=/tmp/sel.png
-[ -f /tmp/shot.pid ] && kill "$(cat /tmp/shot.pid)" 2>/dev/null
+[ -f /tmp/xsnip.pid ] && kill "$(cat /tmp/xsnip.pid)" 2>/dev/null
 sleep 0.3
 rm -f "$OUT"
-setsid python3 "$HERE/../shot.py" -s -o "$OUT" >/tmp/sel.log 2>&1 &
-echo $! > /tmp/shot.pid
+setsid python3 "$HERE/../xsnip.py" -s -o "$OUT" >/tmp/sel.log 2>&1 &
+echo $! > /tmp/xsnip.pid
 sleep 2
 
-# окно выбора: любое окно с именем shot размером с экран
-for W in $(xdotool search --name "^shot$"); do
+# окно выбора: любое окно с именем xsnip размером с экран
+for W in $(xdotool search --name "^xsnip$"); do
   eval "$(xdotool getwindowgeometry --shell "$W")"
   echo "окно $W: ${WIDTH}x${HEIGHT}"
 done
@@ -22,7 +22,7 @@ for i in $(seq 0 10); do xdotool mousemove $((300 + i * 40)) $((250 + i * 30)); 
 xdotool mouseup 1
 sleep 1.5
 
-WID=$(xdotool search --name "^shot$" | head -1)
+WID=$(xdotool search --name "^xsnip$" | head -1)
 echo "редактор: $WID"
 if [ -f "$OUT" ]; then
   echo "файл появился до 'готово' — подозрительно"

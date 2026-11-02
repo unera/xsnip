@@ -3,10 +3,10 @@
 set -u
 export DISPLAY=:97
 HERE=$(cd "$(dirname "$0")" && pwd)
-APP="$HERE/../shot"
+APP="$HERE/../xsnip"
 CFG=/tmp/cfgi3
 
-pkill -x shot 2>/dev/null
+pkill -x xsnip 2>/dev/null
 pkill -f "Xvfb :97" 2>/dev/null
 pkill -f "i3 -c" 2>/dev/null
 sleep 0.6
@@ -27,35 +27,35 @@ export XDG_CONFIG_HOME="$CFG"
 echo "=== dialog + pos tl"
 setsid "$APP" -o /tmp/i3_dialog.png --window dialog --pos tl >/tmp/i3_d.log 2>&1 &
 sleep 2.5
-WID=$(xdotool search --name "^shot$" | head -1)
+WID=$(xdotool search --name "^xsnip$" | head -1)
 echo "окно: $(xdotool getwindowgeometry "$WID" | tr '\n' ' ')"
 i3-msg -t get_tree 2>/dev/null | python3 -c '
 import json,sys
 t=json.load(sys.stdin)
 def walk(n):
-    if n.get("window") is not None and n.get("name")=="shot":
+    if n.get("window") is not None and n.get("name")=="xsnip":
         print("  i3: floating=%s window_type=%s rect=%s" % (n.get("floating"), n.get("window_type"), n.get("rect")))
     for c in n.get("nodes",[])+n.get("floating_nodes",[]):
         walk(c)
 walk(t)
 '
-pkill -x shot 2>/dev/null
+pkill -x xsnip 2>/dev/null
 sleep 0.8
 
 echo "=== normal"
 setsid "$APP" -o /tmp/i3_normal.png --window normal >/tmp/i3_n.log 2>&1 &
 sleep 2.5
-WID=$(xdotool search --name "^shot$" | head -1)
+WID=$(xdotool search --name "^xsnip$" | head -1)
 echo "окно: $(xdotool getwindowgeometry "$WID" | tr '\n' ' ')"
 i3-msg -t get_tree 2>/dev/null | python3 -c '
 import json,sys
 t=json.load(sys.stdin)
 def walk(n):
-    if n.get("window") is not None and n.get("name")=="shot":
+    if n.get("window") is not None and n.get("name")=="xsnip":
         print("  i3: floating=%s rect=%s" % (n.get("floating"), n.get("rect")))
     for c in n.get("nodes",[])+n.get("floating_nodes",[]):
         walk(c)
 walk(t)
 '
 echo "--- логи:"; head -3 /tmp/i3_d.log; head -3 /tmp/i3_n.log
-pkill -x shot 2>/dev/null
+pkill -x xsnip 2>/dev/null

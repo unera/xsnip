@@ -6,13 +6,16 @@ LDLIBS += $(shell pkg-config --libs $(PKGS))
 
 PREFIX ?= /usr/local
 
-shot: shot.c
-	$(CC) $(CFLAGS) -o $@ shot.c $(LDLIBS)
+xsnip: xsnip.c
+	$(CC) $(CFLAGS) -o $@ xsnip.c $(LDLIBS)
 
-install: shot
-	install -m 755 shot $(DESTDIR)$(PREFIX)/bin/shot
+install: xsnip
+	install -d $(DESTDIR)$(PREFIX)/bin
+	install -m 755 xsnip $(DESTDIR)$(PREFIX)/bin/xsnip
+	install -d $(DESTDIR)$(PREFIX)/share/man/man1
+	install -m 644 man/xsnip.1 $(DESTDIR)$(PREFIX)/share/man/man1/xsnip.1
 
 clean:
-	rm -f shot
+	rm -f xsnip
 
 .PHONY: install clean

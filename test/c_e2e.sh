@@ -3,22 +3,22 @@
 set -u
 export DISPLAY=:99
 HERE=$(cd "$(dirname "$0")" && pwd)
-APP="$HERE/../shot"
+APP="$HERE/../xsnip"
 OUT=/tmp/c_out.png
 XDG_CONFIG_HOME=/tmp/cfgtest
 export XDG_CONFIG_HOME
 rm -rf "$XDG_CONFIG_HOME"; mkdir -p "$XDG_CONFIG_HOME"
 
-pkill -x shot 2>/dev/null
+pkill -x xsnip 2>/dev/null
 sleep 0.5
 rm -f "$OUT"
 
 setsid "$APP" -o "$OUT" >/tmp/c_shot.log 2>&1 &
-echo $! > /tmp/shot.pid
+echo $! > /tmp/xsnip.pid
 sleep 2
-if ! kill -0 "$(cat /tmp/shot.pid)" 2>/dev/null; then echo "FAIL: процесс умер"; cat /tmp/c_shot.log; exit 1; fi
+if ! kill -0 "$(cat /tmp/xsnip.pid)" 2>/dev/null; then echo "FAIL: процесс умер"; cat /tmp/c_shot.log; exit 1; fi
 
-WID=$(xdotool search --name "^shot$" | head -1)
+WID=$(xdotool search --name "^xsnip$" | head -1)
 if [ -z "$WID" ]; then echo "FAIL: окна нет"; cat /tmp/c_shot.log; exit 1; fi
 xdotool getwindowgeometry "$WID"
 

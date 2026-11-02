@@ -3,20 +3,20 @@
 set -u
 export DISPLAY=:99
 HERE=$(cd "$(dirname "$0")" && pwd)
-[ -f /tmp/shot.pid ] && kill "$(cat /tmp/shot.pid)" 2>/dev/null
+[ -f /tmp/xsnip.pid ] && kill "$(cat /tmp/xsnip.pid)" 2>/dev/null
 sleep 0.3
 rm -f /tmp/clip.png
-setsid python3 "$HERE/../shot.py" >/tmp/txt.log 2>&1 &
-echo $! > /tmp/shot.pid
+setsid python3 "$HERE/../xsnip.py" >/tmp/txt.log 2>&1 &
+echo $! > /tmp/xsnip.pid
 sleep 2
-WID=$(xdotool search --name "^shot$" | head -1)
+WID=$(xdotool search --name "^xsnip$" | head -1)
 echo "окно $WID"
 xdotool windowactivate "$WID" 2>/dev/null
 xdotool key --window "$WID" 2
 sleep 0.3
 xdotool mousemove 300 200 sleep 0.2 click 1
 sleep 0.8
-xdotool type --delay 60 "Hello shot"
+xdotool type --delay 60 "Hello xsnip"
 sleep 0.3
 xdotool key Return
 sleep 0.5

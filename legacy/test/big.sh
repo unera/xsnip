@@ -13,10 +13,10 @@ sleep 1.5
 xwininfo -root | grep -E "Width|Height"
 
 rm -f "$OUT"
-SHOT_DEBUG=1 setsid python3 "$HERE/../shot.py" -o "$OUT" >/tmp/big.log 2>&1 &
+XSNIP_DEBUG=1 setsid python3 "$HERE/../xsnip.py" -o "$OUT" >/tmp/big.log 2>&1 &
 echo $! > /tmp/shot98.pid
 sleep 2.5
-WID=$(xdotool search --name "^shot$" | head -1)
+WID=$(xdotool search --name "^xsnip$" | head -1)
 eval "$(xdotool getwindowgeometry --shell "$WID")"
 echo "окно редактора ${WIDTH}x${HEIGHT}"
 xdotool mousemove 1000 1000 sleep 0.2 click 1

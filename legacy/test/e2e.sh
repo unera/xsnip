@@ -1,21 +1,21 @@
 #!/bin/bash
-# e2e-тест shot под Xvfb: запуск, рисование мышью, сохранение по кнопке "готово".
+# e2e-тест xsnip под Xvfb: запуск, рисование мышью, сохранение по кнопке "готово".
 set -u
 export DISPLAY=:99
 HERE=$(cd "$(dirname "$0")" && pwd)
-APP="$HERE/../shot.py"
+APP="$HERE/../xsnip.py"
 OUT=/tmp/out.png
 
-[ -f /tmp/shot.pid ] && kill "$(cat /tmp/shot.pid)" 2>/dev/null
+[ -f /tmp/xsnip.pid ] && kill "$(cat /tmp/xsnip.pid)" 2>/dev/null
 sleep 0.3
 rm -f "$OUT"
 
-setsid python3 "$APP" -o "$OUT" >/tmp/shot.log 2>&1 &
-echo $! > /tmp/shot.pid
+setsid python3 "$APP" -o "$OUT" >/tmp/xsnip.log 2>&1 &
+echo $! > /tmp/xsnip.pid
 sleep 2
 
-WID=$(xdotool search --name "^shot$" | head -1)
-if [ -z "$WID" ]; then echo "FAIL: окно редактора не найдено"; cat /tmp/shot.log; exit 1; fi
+WID=$(xdotool search --name "^xsnip$" | head -1)
+if [ -z "$WID" ]; then echo "FAIL: окно редактора не найдено"; cat /tmp/xsnip.log; exit 1; fi
 xdotool getwindowgeometry "$WID"
 
 # рисуем штрих по канвасу
@@ -30,7 +30,7 @@ echo "window ${WIDTH}x${HEIGHT}"
 xdotool mousemove $((WIDTH - 45)) 22 click 1
 sleep 1.2
 
-echo "--- stderr:"; cat /tmp/shot.log
+echo "--- stderr:"; cat /tmp/xsnip.log
 if [ -f "$OUT" ]; then
   ls -l "$OUT"
   python3 -c "import gi;gi.require_version('GdkPixbuf','2.0');from gi.repository import GdkPixbuf;pb=GdkPixbuf.Pixbuf.new_from_file('$OUT');print('PNG OK', pb.get_width(), pb.get_height(), 'alpha' if pb.get_has_alpha() else 'no-alpha')"

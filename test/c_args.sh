@@ -4,19 +4,19 @@ set -u
 export DISPLAY=:99
 export XDG_CONFIG_HOME=/tmp/cfgargs
 HERE=$(cd "$(dirname "$0")" && pwd)
-APP="$HERE/../shot"
+APP="$HERE/../xsnip"
 OUT=/tmp/c_args.png
 
-pkill -x shot 2>/dev/null
+pkill -x xsnip 2>/dev/null
 sleep 0.5
 rm -rf "$XDG_CONFIG_HOME"; mkdir -p "$XDG_CONFIG_HOME"
 rm -f "$OUT"
 
 setsid "$APP" -o "$OUT" --colors "#0000ff,#00ff00,#ffff00" --color 2 \
     --pen 3 --text 20 --window normal --pos tl >/tmp/c_args.log 2>&1 &
-echo $! > /tmp/shot.pid
+echo $! > /tmp/xsnip.pid
 sleep 2
-WID=$(xdotool search --name "^shot$" | head -1)
+WID=$(xdotool search --name "^xsnip$" | head -1)
 eval "$(xdotool getwindowgeometry --shell "$WID")"
 echo "окно: pos=${X},${Y} size=${WIDTH}x${HEIGHT} (ожидание tl = 10,10)"
 xdotool mousemove $((X + 300)) $((Y + 300)) mousedown 1
@@ -26,7 +26,7 @@ sleep 0.3
 xdotool mousemove $((X + WIDTH - 40)) $((Y + 22)) click 1
 sleep 1.2
 echo "--- лог:"; cat /tmp/c_args.log
-echo "--- конфиг:"; cat "$XDG_CONFIG_HOME/shot/config" 2>/dev/null || echo "нет"
+echo "--- конфиг:"; cat "$XDG_CONFIG_HOME/xsnip/config" 2>/dev/null || echo "нет"
 python3 - <<'PY'
 import gi
 gi.require_version('GdkPixbuf','2.0')

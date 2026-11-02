@@ -1,16 +1,16 @@
 #!/bin/bash
 # один клик в известную точку — проверить попадание координат
 set -u
-export DISPLAY=:99 SHOT_DEBUG=1
+export DISPLAY=:99 XSNIP_DEBUG=1
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=/tmp/click.png
-[ -f /tmp/shot.pid ] && kill "$(cat /tmp/shot.pid)" 2>/dev/null
+[ -f /tmp/xsnip.pid ] && kill "$(cat /tmp/xsnip.pid)" 2>/dev/null
 sleep 0.3
 rm -f "$OUT"
-setsid python3 "$HERE/../shot.py" -o "$OUT" >/tmp/shot2.log 2>&1 &
-echo $! > /tmp/shot.pid
+setsid python3 "$HERE/../xsnip.py" -o "$OUT" >/tmp/shot2.log 2>&1 &
+echo $! > /tmp/xsnip.pid
 sleep 2
-WID=$(xdotool search --name "^shot$" | head -1)
+WID=$(xdotool search --name "^xsnip$" | head -1)
 xdotool mousemove 600 400 sleep 0.2 click 1
 sleep 0.4
 eval "$(xdotool getwindowgeometry --shell "$WID")"

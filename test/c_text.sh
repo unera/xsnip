@@ -4,17 +4,17 @@ set -u
 export DISPLAY=:99
 export XDG_CONFIG_HOME=/tmp/cfgtext
 HERE=$(cd "$(dirname "$0")" && pwd)
-APP="$HERE/../shot"
+APP="$HERE/../xsnip"
 OUT=/tmp/c_text.png
 
-pkill -x shot 2>/dev/null
+pkill -x xsnip 2>/dev/null
 sleep 0.5
 rm -rf "$XDG_CONFIG_HOME"; mkdir -p "$XDG_CONFIG_HOME"
 rm -f "$OUT"
 
 setsid "$APP" -o "$OUT" --window dialog --pos center >/tmp/c_text.log 2>&1 &
 sleep 2
-WID=$(xdotool search --name "^shot$" | head -1)
+WID=$(xdotool search --name "^xsnip$" | head -1)
 eval "$(xdotool getwindowgeometry --shell "$WID")"
 
 xdotool mousemove $((X + 175)) $((Y + 22)) click 1     # кнопка «текст»
@@ -29,7 +29,7 @@ echo "--- окно после ввода:"
 python3 "$HERE/snapshot.py" "$WID" /tmp/c_text_win.png
 xdotool mousemove $((X + WIDTH - 40)) $((Y + 22)) click 1
 sleep 1.2
-echo "--- конфиг:"; cat "$XDG_CONFIG_HOME/shot/config" 2>/dev/null || echo "нет"
+echo "--- конфиг:"; cat "$XDG_CONFIG_HOME/xsnip/config" 2>/dev/null || echo "нет"
 python3 - <<'PY'
 import gi
 gi.require_version('GdkPixbuf','2.0')
