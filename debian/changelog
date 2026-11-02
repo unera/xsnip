@@ -11,6 +11,8 @@ xsnip (2.1-1) unstable; urgency=medium
     (the panel offset was missing when repainting saved operations).
   * Fix: the drawing cursor was shown over the toolbar.
 
+ -- Dmitry Oboukhov <unera@debian.org>  Mon, 02 Nov 2026 17:10:00 +0300
+
 xsnip (2.0-1) unstable; urgency=medium
 
   * Initial release.
