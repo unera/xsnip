@@ -1,2 +1,4 @@
-test/__pycache__/
+shot
+shot_asan
 __pycache__/
+test/__pycache__/
