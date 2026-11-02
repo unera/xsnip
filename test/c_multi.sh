@@ -9,7 +9,7 @@ export LD_PRELOAD="$HERE/fake_xinerama.so"
 export XSNIP_FAKE_HEADS="1920x1080+0+0,1920x1200+0+1080"
 
 pkill -x xsnip 2>/dev/null || true
-pkill -x Xvfb 2>/dev/null || true
+pkill -f "Xvfb :9[0-9]" 2>/dev/null || true
 sleep 0.6
 Xvfb :94 -screen 0 1920x2280x24 >/tmp/xvfb94.log 2>&1 &
 sleep 2

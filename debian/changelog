@@ -1,3 +1,26 @@
+xsnip (3.1-1) unstable; urgency=medium
+
+  * Security: no more system("mkdir -p ...") built from XDG_CONFIG_HOME —
+    the directory is created with mkdir(2), so a crafted XDG_CONFIG_HOME can
+    no longer run commands (found by a code review, reproduced before the fix).
+  * Build: the GUI test target is no longer called "check", so dh_auto_test
+    does not run a screenshot test without a display; the package builds in a
+    clean chroot again.
+  * Clipboard: the INCR transfer restores the requestor's event mask, keeps up
+    to four concurrent transfers and drops a stuck one after 30 seconds.
+  * Numbers from the command line, config and --delay are parsed with the C
+    locale: in ru_RU "--pen 2.5" used to be read as 2.
+  * The toolbar scale is also capped by the widest monitor, so on a portrait
+    screen the buttons stay inside the window.
+  * Crop: the XOR rectangle is always erased, including the early return when
+    the selection is too small.
+  * Backspace deletes a whole UTF-8 character, not a byte.
+  * The font cache no longer leaks XftFont objects when it is full; X errors
+    are reported to stderr instead of being swallowed.
+  * img_crop clamps its own coordinates; text insertion point is clamped too.
+  * Cleanups: dead globals and atoms removed, XUnloadFont, correct version in
+    --version and in the man page, Homepage/Source point at GitHub.
+
 xsnip (3.0-1) unstable; urgency=medium
 
   * Resizing the editor window is fast now: while the size keeps changing only

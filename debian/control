@@ -11,7 +11,7 @@ Build-Depends: debhelper-compat (= 13),
                zlib1g-dev
 Standards-Version: 4.7.0
 Rules-Requires-Root: no
-Homepage: https://vds2.uvw.ru/debian
+Homepage: https://github.com/unera/xsnip
 
 Package: xsnip
 Architecture: any

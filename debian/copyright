@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: xsnip
-Source: https://vds2.uvw.ru/debian
+Source: https://github.com/unera/xsnip
 
 Files: *
 Copyright: 2026 Dmitry Oboukhov <unera@debian.org>

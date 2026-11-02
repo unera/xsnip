@@ -26,8 +26,10 @@ run_lang() {
     if [ -n "$TIP" ]; then
         python3 "$HERE/snapshot.py" "$TIP" "/tmp/tipbox_$lang.png" >/dev/null
         echo "  $lang: подсказка показана"
+        rc=0
     else
         echo "  $lang: подсказки нет (плохо)"
+        rc=1
     fi
     python3 "$HERE/snapshot.py" "$WID" "/tmp/tipwin_$lang.png" >/dev/null
     pkill -x xsnip 2>/dev/null
@@ -45,3 +47,4 @@ for l in ('en','ru','zh'):
     pb.new_subpixbuf(0, 0, 420, 45).savev('/tmp/panel_%s.png' % l, 'png', [], [])
 print("панели сохранены")
 PY
+exit $rc

@@ -19,10 +19,10 @@ install: xsnip
 	install -d $(DESTDIR)$(PREFIX)/share/man/man1
 	install -m 644 man/xsnip.1 $(DESTDIR)$(PREFIX)/share/man/man1/xsnip.1
 
-check: xsnip
+test-gui: xsnip
 	bash test/c_e2e.sh
 
 clean:
 	rm -f xsnip
 
-.PHONY: install check clean
+.PHONY: install test-gui clean

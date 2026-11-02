@@ -49,14 +49,19 @@
 
 /* ------------------------------------------------------------------ общее */
 
+#define XSNIP_VERSION "3.1"
 #define NCOLORS 5
 /* Панель и всё, что её составляет, масштабируется от самого высокого монитора:
  * за базу взято 800 px по высоте (как было раньше), дальше линейно. */
 static int max_mon_h = 600;   /* самая большая высота среди мониторов */
 static int panel_h = 46;
 
+static int max_mon_w = 1000;
+
 static int sp(int base) {
-    int v = (base * max_mon_h + 400) / 800;
+    int by_h = (base * max_mon_h + 400) / 800;
+    int by_w = (base * max_mon_w + 500) / 1000;   /* портретный экран: не шире него */
+    int v = by_h < by_w ? by_h : by_w;
     if (v < base)
         v = base;
     if (v > base * 4)
@@ -81,9 +86,15 @@ static const char *DEF_COLORS[NCOLORS] = {
 
 static int x_error_handler(Display *d, XErrorEvent *ev) {
     (void)d;
-    if (getenv("XSNIP_DEBUG"))
-        fprintf(stderr, "X error: opcode=%d code=%d\n", ev->request_code, ev->error_code);
-    return 0; /* не падаем: часть запросов гонки с WM */
+    static int reported = 0;
+    /* гонки с WM дают BadMatch на XSetInputFocus — их не страшно, а вот
+     * BadDrawable/BadValue стоит показать хотя бы несколько раз */
+    if (getenv("XSNIP_DEBUG") || (reported < 3 && ev->error_code != BadMatch)) {
+        fprintf(stderr, "xsnip: X error opcode=%d code=%d\n", ev->request_code,
+                ev->error_code);
+        reported++;
+    }
+    return 0;
 }
 
 static Display *dpy;
@@ -92,7 +103,6 @@ static Visual *visual;
 static Colormap cmap;
 static Window root;
 static int depth;
-static GC gc;
 static XIM xim;
 static XIC xic_editor;
 
@@ -260,9 +270,15 @@ static void monitors_init(void) {
         nmons = 1;
     }
     max_mon_h = 0;
-    for (int i = 0; i < nmons; i++)
+    max_mon_w = 0;
+    for (int i = 0; i < nmons; i++) {
         if (mons[i].h > max_mon_h)
             max_mon_h = mons[i].h;
+        if (mons[i].w > max_mon_w)
+            max_mon_w = mons[i].w;
+    }
+    if (max_mon_w < 800)
+        max_mon_w = 800;
     panel_h = sp(46);
     if (getenv("XSNIP_DEBUG")) {
         for (int i = 0; i < nmons; i++)
@@ -373,6 +389,8 @@ static img_t *capture_root(void) {
 static img_t *img_crop(const img_t *src, int x, int y, int w, int h) {
     if (x < 0) { w += x; x = 0; }
     if (y < 0) { h += y; y = 0; }
+    if (x >= src->w) x = src->w - 1;
+    if (y >= src->h) y = src->h - 1;
     if (x + w > src->w) w = src->w - x;
     if (y + h > src->h) h = src->h - y;
     if (w < 1) w = 1;
@@ -435,6 +453,47 @@ typedef struct {
 
 static const char *POS_NAMES[5] = {"center", "tl", "tr", "bl", "br"};
 
+/* mkdir -p своими руками: system() с путём из окружения — это инъекция */
+static int mkdir_p(const char *path) {
+    char tmp[512];
+    snprintf(tmp, sizeof(tmp), "%s", path);
+    for (char *p = tmp + 1; *p; p++) {
+        if (*p != '/')
+            continue;
+        *p = 0;
+        if (mkdir(tmp, 0700) != 0 && errno != EEXIST)
+            return -1;
+        *p = '/';
+    }
+    if (mkdir(tmp, 0700) != 0 && errno != EEXIST)
+        return -1;
+    return 0;
+}
+
+/* число независимо от локали: в ru_RU десятичный разделитель — запятая,
+ * и atof("2.5") возвращает 2 */
+static double parse_double(const char *s, double def) {
+    if (!s)
+        return def;
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%s", s);
+    for (char *p = buf; *p; p++)
+        if (*p == ',')
+            *p = '.';
+    locale_t c_loc = newlocale(LC_NUMERIC_MASK, "C", (locale_t)0);
+    char *end = NULL;
+    double v;
+    if (c_loc) {
+        v = strtod_l(buf, &end, c_loc);
+        freelocale(c_loc);
+    } else {
+        v = strtod(buf, &end);
+    }
+    if (end == buf)
+        return def;
+    return v;
+}
+
 static void config_path(char *buf, size_t n) {
     const char *xdg = getenv("XDG_CONFIG_HOME");
     const char *home = getenv("HOME");
@@ -475,9 +534,9 @@ static void cfg_load(cfg_t *c) {
         if (strcmp(key, "color") == 0)
             parse_color(val, &c->color);
         else if (strcmp(key, "pen") == 0)
-            c->pen = atof(val);
+            c->pen = parse_double(val, c->pen);
         else if (strcmp(key, "text") == 0)
-            c->txt = atof(val);
+            c->txt = parse_double(val, c->txt);
         else if (strcmp(key, "tool") == 0)
             c->tool = strcmp(val, "text") == 0 ? 1 : (strcmp(val, "crop") == 0 ? 2 : 0);
         else if (strcmp(key, "window") == 0)
@@ -512,9 +571,7 @@ static void cfg_save(const cfg_t *c) {
     char *slash = strrchr(dir, '/');
     if (slash) {
         *slash = 0;
-        char cmd[600];
-        snprintf(cmd, sizeof(cmd), "mkdir -p '%s'", dir);
-        if (system(cmd) != 0) { /* каталог не создался — молча продолжаем */ }
+        if (mkdir_p(dir) != 0) { /* каталог не создался — молча продолжаем */ }
     }
     FILE *f = fopen(tmp, "w");
     if (!f)
@@ -657,13 +714,18 @@ static int png_write_file(const img_t *im, const char *path) {
  * они не влезают в одно свойство — по протоколу INCR.
  */
 
-static Atom A_CLIPBOARD, A_TARGETS, A_INCR, A_PNG_IMAGE, A_PNG_UPPER, A_TIMESTAMP;
+static Atom A_CLIPBOARD, A_TARGETS, A_INCR, A_PNG_IMAGE, A_PNG_UPPER;
+
+#define INCR_MAX 4
 
 typedef struct {
     Window req;
     Atom prop;
     size_t off;
     int active;
+    long deadline;      /* если клиент пропал — освобождаем слот */
+    long saved_mask;    /* what the requestor had selected before us */
+    int mask_saved;
 } incr_t;
 
 static void notify(Window req, Atom prop, Atom target, Time t) {
@@ -678,6 +740,8 @@ static void notify(Window req, Atom prop, Atom target, Time t) {
     XSendEvent(dpy, req, False, 0, (XEvent *)&ev);
     XFlush(dpy);
 }
+
+static long now_ms(void);
 
 static size_t max_prop_bytes(void) {
     long ext = XExtendedMaxRequestSize(dpy);
@@ -702,9 +766,29 @@ static void clipboard_daemon(unsigned char *data, size_t len) {
         _exit(1);
     XFlush(dpy);
 
-    incr_t inc = {0};
+    incr_t incs[INCR_MAX];
+    memset(incs, 0, sizeof(incs));
     for (;;) {
         XEvent ev;
+        /* ждём с таймаутом: брошенный клиент не должен держать слот вечно */
+        if (!XPending(dpy)) {
+            int fd = XConnectionNumber(dpy);
+            fd_set fds;
+            FD_ZERO(&fds);
+            FD_SET(fd, &fds);
+            struct timeval tv = {1, 0};
+            if (select(fd + 1, &fds, NULL, NULL, &tv) == 0) {
+                long t = now_ms();
+                for (int i = 0; i < INCR_MAX; i++)
+                    if (incs[i].active && t > incs[i].deadline) {
+                        if (incs[i].mask_saved)
+                            XSelectInput(dpy, incs[i].req, incs[i].saved_mask);
+                        incs[i].active = 0;
+                        incs[i].mask_saved = 0;
+                    }
+                continue;
+            }
+        }
         XNextEvent(dpy, &ev);
         switch (ev.type) {
         case SelectionRequest: {
@@ -722,15 +806,33 @@ static void clipboard_daemon(unsigned char *data, size_t len) {
                     notify(rq->requestor, prop, rq->target, rq->time);
                 } else {
                     /* INCR: сначала объявляем длину, потом льём кусками */
+                    int slot = -1;
+                    for (int i = 0; i < INCR_MAX; i++)
+                        if (!incs[i].active) {
+                            slot = i;
+                            break;
+                        }
+                    if (slot < 0) {
+                        /* все слоты заняты: честно отказываем */
+                        notify(rq->requestor, None, rq->target, rq->time);
+                        break;
+                    }
                     long n = (long)len;
-                    XSelectInput(dpy, rq->requestor, PropertyChangeMask);
+                    XWindowAttributes wa;
+                    if (XGetWindowAttributes(dpy, rq->requestor, &wa)) {
+                        incs[slot].saved_mask = wa.your_event_mask;
+                        incs[slot].mask_saved = 1;
+                        XSelectInput(dpy, rq->requestor,
+                                     wa.your_event_mask | PropertyChangeMask);
+                    }
                     XChangeProperty(dpy, rq->requestor, prop, A_INCR, 32,
                                     PropModeReplace, (unsigned char *)&n, 1);
                     notify(rq->requestor, prop, rq->target, rq->time);
-                    inc.req = rq->requestor;
-                    inc.prop = prop;
-                    inc.off = 0;
-                    inc.active = 1;
+                    incs[slot].req = rq->requestor;
+                    incs[slot].prop = prop;
+                    incs[slot].off = 0;
+                    incs[slot].active = 1;
+                    incs[slot].deadline = now_ms() + 30000;
                 }
             } else {
                 notify(rq->requestor, None, rq->target, rq->time);
@@ -738,18 +840,28 @@ static void clipboard_daemon(unsigned char *data, size_t len) {
             break;
         }
         case PropertyNotify: {
-            if (!inc.active || ev.xproperty.window != inc.req ||
-                ev.xproperty.atom != inc.prop ||
-                ev.xproperty.state != PropertyDelete)
+            incr_t *slot = NULL;
+            for (int i = 0; i < INCR_MAX; i++)
+                if (incs[i].active && ev.xproperty.window == incs[i].req &&
+                    ev.xproperty.atom == incs[i].prop &&
+                    ev.xproperty.state == PropertyDelete) {
+                    slot = &incs[i];
+                    break;
+                }
+            if (!slot)
                 break;
             size_t chunk = max_prop_bytes();
-            size_t left = len - inc.off;
+            size_t left = len - slot->off;
             size_t n = left < chunk ? left : chunk;
-            XChangeProperty(dpy, inc.req, inc.prop, A_PNG_IMAGE, 8, PropModeReplace,
-                            data + inc.off, (int)n);
-            inc.off += n;
-            if (n == 0)
-                inc.active = 0;
+            XChangeProperty(dpy, slot->req, slot->prop, A_PNG_IMAGE, 8, PropModeReplace,
+                            data + slot->off, (int)n);
+            slot->off += n;
+            if (n == 0) {
+                if (slot->mask_saved)
+                    XSelectInput(dpy, slot->req, slot->saved_mask);
+                slot->active = 0;
+                slot->mask_saved = 0;
+            }
             break;
         }
         case SelectionClear:
@@ -919,7 +1031,8 @@ static rect_t select_area(img_t *shot) {
     XSetFunction(dpy, s.xor_gc, GXxor);
     XSetForeground(dpy, s.xor_gc, 0xffffff);
     XSetLineAttributes(dpy, s.xor_gc, 1, LineSolid, CapButt, JoinMiter);
-    XSetFont(dpy, s.xor_gc, XLoadFont(dpy, "fixed"));
+    Font fixed = XLoadFont(dpy, "fixed");
+    XSetFont(dpy, s.xor_gc, fixed);
     s.draw = XftDrawCreate(dpy, s.win, visual, cmap);
     s.font = XftFontOpenName(dpy, scr, "sans:pixelsize=13");
 
@@ -1034,6 +1147,7 @@ out:
     XftDrawDestroy(s.draw);
     XFreeGC(dpy, s.xor_gc);
     XFreeGC(dpy, s.gc);
+    XUnloadFont(dpy, fixed);
     XDestroyWindow(dpy, s.win);
     XFreeCursor(dpy, cur);
     XDestroyImage(s.bright);
@@ -1077,12 +1191,17 @@ static XftFont *font_for(int px, int fam) {
         if (!f)
             die("не нашёл шрифт (fontconfig)");
     }
-    if (nfonts < (int)(sizeof(fonts) / sizeof(fonts[0]))) {
-        fonts[nfonts].px = px;
-        fonts[nfonts].fam = fam;
-        fonts[nfonts].font = f;
-        nfonts++;
+    if (nfonts >= (int)(sizeof(fonts) / sizeof(fonts[0]))) {
+        /* кэш кончился: закрываем всё, иначе шрифты текут при ресайзе */
+        for (int i = 0; i < nfonts; i++)
+            if (fonts[i].font)
+                XftFontClose(dpy, fonts[i].font);
+        nfonts = 0;
     }
+    fonts[nfonts].px = px;
+    fonts[nfonts].fam = fam;
+    fonts[nfonts].font = f;
+    nfonts++;
     return f;
 }
 
@@ -1146,7 +1265,8 @@ static void draw_str(XftDraw *draw, uint32_t rgb, int px, int x, int y, const ch
         unsigned int cp = 0;
         int len = utf8_next(p, &cp);
         XftFont *f = font_cp(px, cp);
-        XftDrawStringUtf8(draw, &col, f, cx, y + f->ascent, (const FcChar8 *)p, len);
+        XftDrawStringUtf8(draw, &col, f, cx, y + font_get(px)->ascent,
+                          (const FcChar8 *)p, len);
         XGlyphInfo ext;
         XftTextExtentsUtf8(dpy, f, (const FcChar8 *)p, len, &ext);
         cx += ext.xOff;
@@ -1251,7 +1371,6 @@ typedef struct {
     btn_t btns[32];
     int nbtn;
     int hot;         /* кнопка под курсором */
-    int pressed;     /* нажатая кнопка */
 
     int drawing;
     int *cur_pts;
@@ -1274,7 +1393,6 @@ typedef struct {
     char textbuf[TEXT_MAX];
     int text_len;
     int text_x, text_y;   /* координаты вставки в изображении */
-    int text_wi;          /* ширина ввода в окне */
 
     mon_t mon;       /* экран, на котором живёт окно */
     int cursor_zone; /* 0 — панель, 1 — картинка */
@@ -1728,8 +1846,9 @@ static void crop_xor(editor_t *e, int x, int y, int w, int h, int label) {
     if (label) {
         char lab[64];
         snprintf(lab, sizeof(lab), "%d x %d", w, h);
-        XDrawString(dpy, e->win, e->crop_gc, x + 4, (y > 16 ? y - 4 : y + h + 14), lab,
-                    (int)strlen(lab));
+        int fh = sp(13);
+        XDrawString(dpy, e->win, e->crop_gc, x + sp(4),
+                    (y > panel_h ? y - sp(4) : y + h + fh + sp(2)), lab, (int)strlen(lab));
     }
 }
 
@@ -1873,7 +1992,6 @@ static void editor_blit_canvas(editor_t *e) {
         XSetForeground(dpy, e->cgc, 0x202020);
         XDrawRectangle(dpy, e->win, e->cgc, x, y, w - 1, h - 1);
         draw_str(e->draw, 0x101010, px, x + sp(10), y + sp(6), line);
-        (void)e->text_wi;
         /* где именно начнётся текст: вертикальная черта высотой с кегль */
         int cx = e->ox + (int)(e->text_x * e->scale);
         int cy = panel_h + e->oy + (int)(e->text_y * e->scale);
@@ -2024,6 +2142,10 @@ static void editor_start_text(editor_t *e, int wx, int wy) {
     e->textbuf[0] = 0;
     e->text_x = (int)((wx - e->ox) / e->scale);
     e->text_y = (int)((wy - panel_h - e->oy) / e->scale);
+    if (e->text_x < 0) e->text_x = 0;
+    if (e->text_y < 0) e->text_y = 0;
+    if (e->text_x > e->iw) e->text_x = e->iw;
+    if (e->text_y > e->ih) e->text_y = e->ih;
 }
 
 static void editor_commit_text(editor_t *e) {
@@ -2088,6 +2210,7 @@ static void editor_undo(editor_t *e) {
 }
 
 static void editor_crop_apply(editor_t *e) {
+    crop_erase(e);
     int x0 = e->cx0 < e->cx1 ? e->cx0 : e->cx1;
     int y0 = e->cy0 < e->cy1 ? e->cy0 : e->cy1;
     int w = e->cx0 < e->cx1 ? e->cx1 - e->cx0 : e->cx0 - e->cx1;
@@ -2104,7 +2227,6 @@ static void editor_crop_apply(editor_t *e) {
         return;
     }
 
-    crop_erase(e);
     img_t *c = img_crop(e->src, x0, y0, w, h);
     op_t *cop = ops_push(&e->ops);
     cop->kind = OP_CROP;
@@ -2584,7 +2706,10 @@ static void editor_run(editor_t *e) {
                 }
                 if (ks == XK_BackSpace) {
                     if (e->text_len > 0) {
-                        e->text_len--;
+                        int k = e->text_len - 1;
+                        while (k > 0 && ((unsigned char)e->textbuf[k] & 0xc0) == 0x80)
+                            k--;
+                        e->text_len = k;
                         e->textbuf[e->text_len] = 0;
                         editor_blit_canvas(e);
                         XFlush(dpy);
@@ -2707,9 +2832,9 @@ int main(int argc, char **argv) {
         } else if (!strcmp(a, "-d") || !strcmp(a, "--delay")) {
             if (++i >= argc)
                 die("нужна задержка после %s", a);
-            delay = atof(argv[i]);
+            delay = parse_double(argv[i], 0.0);
         } else if (!strncmp(a, "--delay=", 8)) {
-            delay = atof(a + 8);
+            delay = parse_double(a + 8, 0.0);
         } else if (!strcmp(a, "--colors")) {
             if (++i >= argc)
                 die("нужен список цветов");
@@ -2741,11 +2866,11 @@ int main(int argc, char **argv) {
         } else if (!strcmp(a, "--pen")) {
             if (++i >= argc)
                 die("нужна толщина");
-            cfg.pen = atof(argv[i]);
+            cfg.pen = parse_double(argv[i], cfg.pen);
         } else if (!strcmp(a, "--text")) {
             if (++i >= argc)
                 die("нужен кегль");
-            cfg.txt = atof(argv[i]);
+            cfg.txt = parse_double(argv[i], cfg.txt);
         } else if (!strcmp(a, "--window")) {
             if (++i >= argc)
                 die("нужен тип окна");
@@ -2769,7 +2894,7 @@ int main(int argc, char **argv) {
             usage(stdout);
             return 0;
         } else if (!strcmp(a, "-v") || !strcmp(a, "--version")) {
-            printf("xsnip 2.0 (C, Xlib+Xft+zlib)\n");
+            printf("xsnip %s (C, Xlib+Xft+zlib)\n", XSNIP_VERSION);
             return 0;
         } else {
             usage(stderr);
@@ -2791,7 +2916,6 @@ int main(int argc, char **argv) {
     visual = DefaultVisual(dpy, scr);
     cmap = DefaultColormap(dpy, scr);
     depth = DefaultDepth(dpy, scr);
-    gc = DefaultGC(dpy, scr);
 
     monitors_init();
 
@@ -2800,7 +2924,6 @@ int main(int argc, char **argv) {
     A_INCR = XInternAtom(dpy, "INCR", False);
     A_PNG_IMAGE = XInternAtom(dpy, "image/png", False);
     A_PNG_UPPER = XInternAtom(dpy, "PNG", False);
-    A_TIMESTAMP = XInternAtom(dpy, "TIMESTAMP", False);
 
     xim = XOpenIM(dpy, NULL, NULL, NULL);
     if (xim) {
