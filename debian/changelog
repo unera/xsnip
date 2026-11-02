@@ -1,3 +1,13 @@
+xsnip (2.9-1) unstable; urgency=medium
+
+  * The toolbar scales with the tallest monitor: base is 800 points of height,
+    so on a 1200-high screen the panel, its font and the icons are 1.5x
+    bigger. Left at the old size on small screens.
+  * Shortcut letters are no longer printed on the buttons; they are shown in
+    the tooltips instead ("Pen (p)").
+
+ -- Dmitry Oboukhov <unera@debian.org>  Mon, 02 Nov 2026 23:10:00 +0300
+
 xsnip (2.8-1) unstable; urgency=medium
 
   * Tooltips: after 0.7 s of hovering over a button a small hint appears with

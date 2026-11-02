@@ -50,7 +50,19 @@
 /* ------------------------------------------------------------------ общее */
 
 #define NCOLORS 5
-#define PANEL_H 46
+/* Панель и всё, что её составляет, масштабируется от самого высокого монитора:
+ * за базу взято 800 px по высоте (как было раньше), дальше линейно. */
+static int max_mon_h = 600;   /* самая большая высота среди мониторов */
+static int panel_h = 46;
+
+static int sp(int base) {
+    int v = (base * max_mon_h + 400) / 800;
+    if (v < base)
+        v = base;
+    if (v > base * 4)
+        v = base * 4;
+    return v;
+}
 #define MARGIN 10
 #define TEXT_MAX 1024
 
@@ -98,9 +110,9 @@ static const char *LANG_TABLE[3][STR_COUNT] = {
     {
         "Copy to clipboard",
         "Undo (Ctrl+Z)",
-        "Pen (p)",
-        "Text (t)",
-        "Crop (r)",
+        "Pen",
+        "Text",
+        "Crop",
         "Done (save and close)",
         "Thickness",
         "Font size",
@@ -126,9 +138,9 @@ static const char *LANG_TABLE[3][STR_COUNT] = {
     {
         "В буфер обмена",
         "Отменить (Ctrl+Z)",
-        "Перо (p)",
-        "Текст (t)",
-        "Вырезать (r)",
+        "Перо",
+        "Текст",
+        "Вырезать",
         "Готово — сохранить и закрыть",
         "Толщина",
         "Кегль",
@@ -154,9 +166,9 @@ static const char *LANG_TABLE[3][STR_COUNT] = {
     {
         "复制到剪贴板",
         "撤销 (Ctrl+Z)",
-        "画笔 (p)",
-        "文字 (t)",
-        "裁剪 (r)",
+        "画笔",
+        "文字",
+        "裁剪",
         "完成 (保存并关闭)",
         "粗细",
         "字号",
@@ -219,7 +231,6 @@ typedef struct {
 
 static mon_t mons[16];
 static int nmons;
-static int max_mon_h = 600;   /* самая большая высота среди мониторов */
 
 static int input_font_px(void);
 
@@ -252,6 +263,7 @@ static void monitors_init(void) {
     for (int i = 0; i < nmons; i++)
         if (mons[i].h > max_mon_h)
             max_mon_h = mons[i].h;
+    panel_h = sp(46);
     if (getenv("XSNIP_DEBUG")) {
         for (int i = 0; i < nmons; i++)
             fprintf(stderr, "monitor %d: %dx%d+%d+%d\n", i, mons[i].w, mons[i].h,
@@ -1346,7 +1358,7 @@ static void view_rebuild(editor_t *e) {
 static void editor_draw_ops(editor_t *e, Drawable d, XftDraw *xd, int to_window) {
     double s = to_window ? e->scale : 1.0;
     int ox = to_window ? e->ox : 0;
-    int oy = to_window ? e->oy + PANEL_H : 0;
+    int oy = to_window ? e->oy + panel_h : 0;
     for (int i = 0; i < e->ops.n; i++) {
         op_t *op = &e->ops.items[i];
         if (op->kind == OP_STROKE) {
@@ -1527,57 +1539,57 @@ static int ui_button(editor_t *e, int id, int x, int y, int w, int h) {
     return x + w;
 }
 
-#define ICON_SZ 16
-#define ICON_BTN 34
-#define TOOL_PAD_ICON 6
+
 
 static int tool_width(const char *label) {
-    return 8 + ICON_SZ + TOOL_PAD_ICON + str_width(13, label) + 10;
+    int ico = sp(16), pad = sp(6);
+    return sp(8) + ico + pad + str_width(sp(13), label) + sp(10);
 }
 
 /* сколько места просит панель — меньше этого окно делать нельзя */
 static int panel_width(editor_t *e) {
-    int w = 8;
-    w += ICON_BTN + 10;                        /* отменить */
-    w += tool_width("перо") + 4;               /* перо */
-    w += tool_width("текст") + 4;              /* текст */
-    w += tool_width("вырезать") + 10;          /* вырезать */
-    w += NCOLORS * (26 + 4) + 6;               /* цвета */
-    w += 26 + 4 + str_width(13, "толщина 10.5%") + 10 + 4 + 26;
-    w += 10 + ICON_BTN + 6 + ICON_BTN + 8;     /* буфер + готово */
+    int w = sp(8);
+    w += sp(34) + sp(10);                          /* отменить */
+    w += tool_width(t(STR_PEN)) + sp(4);           /* перо */
+    w += tool_width(t(STR_TEXT)) + sp(4);          /* текст */
+    w += tool_width(t(STR_CROP)) + sp(10);         /* вырезать */
+    w += NCOLORS * (sp(26) + sp(4)) + sp(6);       /* цвета */
+    w += sp(26) + sp(4) + str_width(sp(13), "Very wide label 00.0% ") + sp(10) + sp(4) +
+         sp(26);
+    w += sp(10) + sp(34) + sp(6) + sp(34) + sp(8); /* буфер + готово */
     (void)e;
     return w;
 }
 
 static void editor_relayout(editor_t *e) {
     e->nbtn = 0;
-    int x = 8, y = 6, h = PANEL_H - 12;
+    int x = sp(8), y = sp(6), h = panel_h - sp(12);
 
-    x = ui_button(e, B_UNDO, x, y, ICON_BTN, h);
-    x += 10;
-    x = ui_button(e, B_PEN, x, y, tool_width("перо"), h);
-    x += 4;
-    x = ui_button(e, B_TEXT, x, y, tool_width("текст"), h);
-    x += 4;
-    x = ui_button(e, B_CROP, x, y, tool_width("вырезать"), h);
-    x += 10;
+    x = ui_button(e, B_UNDO, x, y, sp(34), h);
+    x += sp(10);
+    x = ui_button(e, B_PEN, x, y, tool_width(t(STR_PEN)), h);
+    x += sp(4);
+    x = ui_button(e, B_TEXT, x, y, tool_width(t(STR_TEXT)), h);
+    x += sp(4);
+    x = ui_button(e, B_CROP, x, y, tool_width(t(STR_CROP)), h);
+    x += sp(10);
 
     for (int i = 0; i < NCOLORS; i++) {
-        x = ui_button(e, B_COLOR0 + i, x, y, 26, h);
-        x += 4;
+        x = ui_button(e, B_COLOR0 + i, x, y, sp(26), h);
+        x += sp(4);
     }
-    x += 6;
+    x += sp(6);
 
-    x = ui_button(e, B_SHRINK, x, y, 26, h);
-    int wlab = str_width(13, "Very wide label 00.0% ") + 10;
-    x += 4 + wlab + 4;
-    x = ui_button(e, B_GROW, x, y, 26, h);
+    x = ui_button(e, B_SHRINK, x, y, sp(26), h);
+    int wlab = str_width(sp(13), "Very wide label 00.0% ") + sp(10);
+    x += sp(4) + wlab + sp(4);
+    x = ui_button(e, B_GROW, x, y, sp(26), h);
 
     /* правый край: копировать и «готово», ровно от края окна */
-    int xdone = e->cw - 8 - ICON_BTN;
-    int xcopy = xdone - 6 - ICON_BTN;
-    ui_button(e, B_COPY, xcopy, y, ICON_BTN, h);
-    ui_button(e, B_DONE, xdone, y, ICON_BTN, h);
+    int xdone = e->cw - sp(8) - sp(34);
+    int xcopy = xdone - sp(6) - sp(34);
+    ui_button(e, B_COPY, xcopy, y, sp(34), h);
+    ui_button(e, B_DONE, xdone, y, sp(34), h);
 }
 
 static int editor_hit(editor_t *e, int x, int y) {
@@ -1606,26 +1618,28 @@ static void editor_draw_button(editor_t *e, btn_t *b, int icon, const char *labe
     button_frame(e, b, active);
     int cy = b->y + b->h / 2;
     uint32_t col = enabled ? 0x202020 : 0xa8a8a4;
+    int fpx = sp(13);
+    int ico = sp(16);
+    int pad = sp(6);
+    int line_y = b->y + (b->h - font_get(fpx)->ascent - font_get(fpx)->descent) / 2;
     if (label && icon != ICON_NONE) {
-        int tw = str_width(13, label);
-        int total = ICON_SZ + TOOL_PAD_ICON + tw;
+        int tw = str_width(fpx, label);
+        int total = ico + pad + tw;
         int x0 = b->x + (b->w - total) / 2;
-        draw_icon(e, e->win, icon, x0 + ICON_SZ / 2, cy, ICON_SZ, col);
-        draw_str(e->draw, col, 13, x0 + ICON_SZ + TOOL_PAD_ICON,
-                 b->y + (b->h - font_get(13)->ascent - font_get(13)->descent) / 2, label);
+        draw_icon(e, e->win, icon, x0 + ico / 2, cy, ico, col);
+        draw_str(e->draw, col, fpx, x0 + ico + pad, line_y, label);
     } else if (label) {
-        int tw = str_width(13, label);
-        draw_str(e->draw, col, 13, b->x + (b->w - tw) / 2,
-                 b->y + (b->h - font_get(13)->ascent - font_get(13)->descent) / 2, label);
+        int tw = str_width(fpx, label);
+        draw_str(e->draw, col, fpx, b->x + (b->w - tw) / 2, line_y, label);
     } else {
-        draw_icon(e, e->win, icon, b->x + b->w / 2, cy, ICON_SZ, col);
+        draw_icon(e, e->win, icon, b->x + b->w / 2, cy, ico, col);
     }
 }
 
 static void editor_draw_swatch(editor_t *e, btn_t *b, uint32_t col, int active) {
     XSetForeground(dpy, e->cgc, active ? 0x202020 : 0xbdbdb8);
     XFillRectangle(dpy, e->win, e->cgc, b->x, b->y, b->w, b->h);
-    int pad = active ? 3 : 2;
+    int pad = active ? sp(3) : sp(2);
     XSetForeground(dpy, e->cgc, col);
     XFillRectangle(dpy, e->win, e->cgc, b->x + pad, b->y + pad, b->w - 2 * pad,
                    b->h - 2 * pad);
@@ -1633,9 +1647,9 @@ static void editor_draw_swatch(editor_t *e, btn_t *b, uint32_t col, int active) 
 
 static void editor_paint(editor_t *e) {
     XSetForeground(dpy, e->cgc, 0xf2f2ee);
-    XFillRectangle(dpy, e->win, e->cgc, 0, 0, e->cw, PANEL_H);
+    XFillRectangle(dpy, e->win, e->cgc, 0, 0, e->cw, panel_h);
     XSetForeground(dpy, e->cgc, 0xc9c9c4);
-    XFillRectangle(dpy, e->win, e->cgc, 0, PANEL_H - 1, e->cw, 1);
+    XFillRectangle(dpy, e->win, e->cgc, 0, panel_h - 1, e->cw, 1);
 
     editor_relayout(e);
 
@@ -1654,9 +1668,9 @@ static void editor_paint(editor_t *e) {
         snprintf(lbl, sizeof(lbl), "%s %.1f%%", t(STR_SIZE), e->cfg.txt);
     else
         snprintf(lbl, sizeof(lbl), "%s %.1f%%", t(STR_WIDTH), e->cfg.pen);
-    int tw = str_width(13, lbl);
-    draw_str(e->draw, 0x202020, 13, lab_x + (lab_w - tw) / 2,
-             (PANEL_H - font_get(13)->ascent - font_get(13)->descent) / 2, lbl);
+    int tw = str_width(sp(13), lbl);
+    draw_str(e->draw, 0x202020, sp(13), lab_x + (lab_w - tw) / 2,
+             (panel_h - font_get(sp(13))->ascent - font_get(sp(13))->descent) / 2, lbl);
 
     for (int i = 0; i < e->nbtn; i++) {
         btn_t *b = &e->btns[i];
@@ -1739,11 +1753,14 @@ static const char *tip_for(editor_t *e, int id, char *buf, size_t n) {
     case B_DONE:
         return t(STR_DONE);
     case B_PEN:
-        return t(STR_PEN);
+        snprintf(buf, n, "%s (p)", t(STR_PEN));
+        return buf;
     case B_TEXT:
-        return t(STR_TEXT);
+        snprintf(buf, n, "%s (t)", t(STR_TEXT));
+        return buf;
     case B_CROP:
-        return t(STR_CROP);
+        snprintf(buf, n, "%s (r)", t(STR_CROP));
+        return buf;
     case B_SHRINK:
         return t(STR_SHRINK);
     case B_GROW:
@@ -1768,14 +1785,14 @@ static void tip_hide(editor_t *e) {
 static void tip_paint(editor_t *e) {
     if (!e->tip_win)
         return;
-    int px = 12;
-    int w = str_width(px, e->tip_text) + 16;
-    int h = font_get(px)->ascent + font_get(px)->descent + 10;
+    int px = sp(12);
+    int w = str_width(px, e->tip_text) + sp(16);
+    int h = font_get(px)->ascent + font_get(px)->descent + sp(10);
     XSetForeground(dpy, e->tip_gc, 0xffffe1);
     XFillRectangle(dpy, e->tip_win, e->tip_gc, 0, 0, (unsigned)w, (unsigned)h);
     XSetForeground(dpy, e->tip_gc, 0x606060);
     XDrawRectangle(dpy, e->tip_win, e->tip_gc, 0, 0, (unsigned)(w - 1), (unsigned)(h - 1));
-    draw_str(e->tip_draw, 0x101010, px, 8, 4, e->tip_text);
+    draw_str(e->tip_draw, 0x101010, px, sp(8), sp(4), e->tip_text);
 }
 
 static void tip_show(editor_t *e) {
@@ -1783,10 +1800,10 @@ static void tip_show(editor_t *e) {
     const char *txt = tip_for(e, e->tip_btn, buf, sizeof(buf));
     if (!txt)
         return;
-    int px = 12;
-    int w = str_width(px, txt) + 16;
-    int h = font_get(px)->ascent + font_get(px)->descent + 10;
-    int x = 8, y = PANEL_H + 4;
+    int px = sp(12);
+    int w = str_width(px, txt) + sp(16);
+    int h = font_get(px)->ascent + font_get(px)->descent + sp(10);
+    int x = sp(8), y = panel_h + sp(4);
     for (int i = 0; i < e->nbtn; i++) {
         if (e->btns[i].id == e->tip_btn) {
             x = e->btns[i].x;
@@ -1831,26 +1848,26 @@ static int input_font_px(void) {
 static void editor_blit_canvas(editor_t *e) {
     if (!e->view_xi)
         return;
-    XPutImage(dpy, e->win, e->cgc, e->view_xi, 0, 0, 0, PANEL_H, e->cw, e->ch);
+    XPutImage(dpy, e->win, e->cgc, e->view_xi, 0, 0, 0, panel_h, e->cw, e->ch);
     editor_draw_ops(e, e->win, e->draw, 1);
     if (e->text_active) {
         char line[TEXT_MAX + 32];
         snprintf(line, sizeof(line), "%s%s_", t(STR_INPUT), e->textbuf);
         int px = input_font_px();
-        int w = str_width(px, line) + 20;
-        int h = font_get(px)->ascent + font_get(px)->descent + 12;
-        int x = 12, y = PANEL_H + e->ch - h - 12;
+        int w = str_width(px, line) + sp(20);
+        int h = font_get(px)->ascent + font_get(px)->descent + sp(12);
+        int x = sp(12), y = panel_h + e->ch - h - sp(12);
         XSetForeground(dpy, e->cgc, 0x202020);
         XFillRectangle(dpy, e->win, e->cgc, x, y, w, h);
         XSetForeground(dpy, e->cgc, 0xffffff);
         XFillRectangle(dpy, e->win, e->cgc, x + 1, y + 1, w - 2, h - 2);
         XSetForeground(dpy, e->cgc, 0x202020);
         XDrawRectangle(dpy, e->win, e->cgc, x, y, w - 1, h - 1);
-        draw_str(e->draw, 0x101010, px, x + 10, y + 6, line);
+        draw_str(e->draw, 0x101010, px, x + sp(10), y + sp(6), line);
         (void)e->text_wi;
         /* где именно начнётся текст: вертикальная черта высотой с кегль */
         int cx = e->ox + (int)(e->text_x * e->scale);
-        int cy = PANEL_H + e->oy + (int)(e->text_y * e->scale);
+        int cy = panel_h + e->oy + (int)(e->text_y * e->scale);
         int ch = (int)((e->cfg.txt / 100.0 * e->basis) * e->scale + 0.5);
         if (ch < 5)
             ch = 5;
@@ -1873,7 +1890,7 @@ static void editor_rebuild(editor_t *e) {
 /* --- действия */
 
 static void editor_cursor_for(editor_t *e, int y) {
-    int zone = (y < PANEL_H) ? 0 : 1;
+    int zone = (y < panel_h) ? 0 : 1;
     if (zone == e->cursor_zone)
         return;
     e->cursor_zone = zone;
@@ -1991,13 +2008,13 @@ static void editor_done(editor_t *e) {
 }
 
 static void editor_start_text(editor_t *e, int wx, int wy) {
-    if (wy < PANEL_H)
+    if (wy < panel_h)
         return;
     e->text_active = 1;
     e->text_len = 0;
     e->textbuf[0] = 0;
     e->text_x = (int)((wx - e->ox) / e->scale);
-    e->text_y = (int)((wy - PANEL_H - e->oy) / e->scale);
+    e->text_y = (int)((wy - panel_h - e->oy) / e->scale);
 }
 
 static void editor_commit_text(editor_t *e) {
@@ -2181,7 +2198,7 @@ static void editor_run(editor_t *e) {
     int maxw = e->mon.w * 95 / 100;
     int maxh = e->mon.h * 85 / 100;
     int winw = e->iw < maxw ? e->iw : maxw;
-    int winh = e->ih + PANEL_H < maxh ? e->ih + PANEL_H : maxh;
+    int winh = e->ih + panel_h < maxh ? e->ih + panel_h : maxh;
     int needed = panel_width(e);
     if (needed > e->mon.w - 2 * MARGIN)
         needed = e->mon.w - 2 * MARGIN;
@@ -2222,7 +2239,7 @@ static void editor_run(editor_t *e) {
     editor_make_ic(e->win);
 
     e->cw = winw;
-    e->ch = winh - PANEL_H;
+    e->ch = winh - panel_h;
     editor_rebuild(e);
     editor_repaint(e);
     XFlush(dpy);
@@ -2264,9 +2281,9 @@ static void editor_run(editor_t *e) {
         case ConfigureNotify:
             if (ev.xconfigure.window == e->win) {
                 int nw = ev.xconfigure.width, nh = ev.xconfigure.height;
-                if (nw != e->cw || nh - PANEL_H != e->ch) {
+                if (nw != e->cw || nh - panel_h != e->ch) {
                     e->cw = nw;
-                    e->ch = nh - PANEL_H;
+                    e->ch = nh - panel_h;
                     if (e->ch < 2)
                         e->ch = 2;
                     editor_rebuild(e);
@@ -2291,7 +2308,7 @@ static void editor_run(editor_t *e) {
                 /* предпросмотр от поставленного угла до курсора */
                 crop_erase(e);
                 int ix = (int)((x - e->ox) / e->scale);
-                int iy = (int)((y - PANEL_H - e->oy) / e->scale);
+                int iy = (int)((y - panel_h - e->oy) / e->scale);
                 if (ix < 0) ix = 0;
                 if (iy < 0) iy = 0;
                 if (ix > e->iw) ix = e->iw;
@@ -2301,7 +2318,7 @@ static void editor_run(editor_t *e) {
                 int rw = e->ax < ix ? ix - e->ax : e->ax - ix;
                 int rh = e->ay < iy ? iy - e->ay : e->ay - iy;
                 e->crop_px = e->ox + (int)(rx0 * e->scale);
-                e->crop_py = PANEL_H + e->oy + (int)(ry0 * e->scale);
+                e->crop_py = panel_h + e->oy + (int)(ry0 * e->scale);
                 e->crop_pw = (int)(rw * e->scale);
                 e->crop_ph = (int)(rh * e->scale);
                 e->crop_drawn = 1;
@@ -2312,7 +2329,7 @@ static void editor_run(editor_t *e) {
             if (e->crop_active) {
                 crop_erase(e);
                 int ix = (int)((x - e->ox) / e->scale);
-                int iy = (int)((y - PANEL_H - e->oy) / e->scale);
+                int iy = (int)((y - panel_h - e->oy) / e->scale);
                 if (ix < 0) ix = 0;
                 if (iy < 0) iy = 0;
                 if (ix > e->iw) ix = e->iw;
@@ -2324,7 +2341,7 @@ static void editor_run(editor_t *e) {
                 int rw = e->cx0 < e->cx1 ? e->cx1 - e->cx0 : e->cx0 - e->cx1;
                 int rh = e->cy0 < e->cy1 ? e->cy1 - e->cy0 : e->cy0 - e->cy1;
                 e->crop_px = e->ox + (int)(rx0 * e->scale);
-                e->crop_py = PANEL_H + e->oy + (int)(ry0 * e->scale);
+                e->crop_py = panel_h + e->oy + (int)(ry0 * e->scale);
                 e->crop_pw = (int)(rw * e->scale);
                 e->crop_ph = (int)(rh * e->scale);
                 e->crop_drawn = 1;
@@ -2334,7 +2351,7 @@ static void editor_run(editor_t *e) {
             }
             if (e->drawing) {
                 int ix = (int)((x - e->ox) / e->scale);
-                int iy = (int)((y - PANEL_H - e->oy) / e->scale);
+                int iy = (int)((y - panel_h - e->oy) / e->scale);
                 if (ix < 0) ix = 0;
                 if (iy < 0) iy = 0;
                 if (ix > e->iw) ix = e->iw;
@@ -2354,10 +2371,10 @@ static void editor_run(editor_t *e) {
                 XSetLineAttributes(dpy, e->cgc, lw, LineSolid, CapRound, JoinRound);
                 if (e->cur_n >= 2) {
                     int x0 = e->ox + (int)(e->cur_pts[(e->cur_n - 2) * 2] * e->scale);
-                    int y0 = PANEL_H + e->oy +
+                    int y0 = panel_h + e->oy +
                              (int)(e->cur_pts[(e->cur_n - 2) * 2 + 1] * e->scale);
                     int x1 = e->ox + (int)(ix * e->scale);
-                    int y1 = PANEL_H + e->oy + (int)(iy * e->scale);
+                    int y1 = panel_h + e->oy + (int)(iy * e->scale);
                     XDrawLine(dpy, e->win, e->cgc, x0, y0, x1, y1);
                 }
                 XFlush(dpy);
@@ -2371,7 +2388,7 @@ static void editor_run(editor_t *e) {
                 }
                 if (hit != e->tip_btn) {
                     tip_hide(e);
-                    e->tip_btn = (y < PANEL_H) ? hit : 0;
+                    e->tip_btn = (y < panel_h) ? hit : 0;
                     e->tip_deadline = now_ms() + 700;
                 }
             }
@@ -2399,7 +2416,7 @@ static void editor_run(editor_t *e) {
             }
             if (ev.xbutton.button != Button1)
                 break;
-            if (y < PANEL_H) {
+            if (y < panel_h) {
                 int id = editor_hit(e, x, y);
                 if (id == B_COPY) {
                     editor_copy(e);
@@ -2432,7 +2449,7 @@ static void editor_run(editor_t *e) {
             }
             if (e->cfg.tool == 2) {
                 int ix = (int)((x - e->ox) / e->scale);
-                int iy = (int)((y - PANEL_H - e->oy) / e->scale);
+                int iy = (int)((y - panel_h - e->oy) / e->scale);
                 if (e->crop_anchor) {
                     /* второй клик: рамка от первого угла до этого */
                     e->cx0 = e->ax;
@@ -2456,7 +2473,7 @@ static void editor_run(editor_t *e) {
                     e->cur_w = 1;
                 e->cur_color = e->cfg.color;
                 int ix = (int)((x - e->ox) / e->scale);
-                int iy = (int)((y - PANEL_H - e->oy) / e->scale);
+                int iy = (int)((y - panel_h - e->oy) / e->scale);
                 if (e->cur_cap < 2) {
                     e->cur_cap = 256;
                     e->cur_pts = realloc(e->cur_pts, (size_t)e->cur_cap * 2 * sizeof(int));
