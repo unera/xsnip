@@ -1,3 +1,16 @@
+xsnip (2.5-1) unstable; urgency=medium
+
+  * Tool shortcuts are now letters: p (pen), t (text), r (crop); the digit
+    keys 1/2/3 keep working.
+  * Cursors: pencil for the pen, I-beam for text, crosshair for crop; the
+    crop tool used to show the text cursor.
+  * Fix: the clipboard and done buttons were appended to the button list from
+    inside the paint routine, so every repaint added two more entries, the
+    32-slot array overflowed and the size buttons started reading garbage
+    (that is why the minus/plus layout looked broken).
+
+ -- Dmitry Oboukhov <unera@debian.org>  Mon, 02 Nov 2026 20:30:00 +0300
+
 xsnip (2.4-1) unstable; urgency=medium
 
   * Region selection is fast now: the rectangle is a XOR rubber band and the

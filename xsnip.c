@@ -1055,6 +1055,7 @@ typedef struct {
 
     mon_t mon;       /* экран, на котором живёт окно */
     int cursor_zone; /* 0 — панель, 1 — картинка */
+    Cursor cur_crop;
 
     XftDraw *draw;
     GC cgc;
@@ -1247,6 +1248,10 @@ static void draw_icon(editor_t *e, Drawable d, int icon, int cx, int cy, int sz,
 /* --- панель */
 
 static int ui_button(editor_t *e, int id, int x, int y, int w, int h) {
+    if (e->nbtn >= (int)(sizeof(e->btns) / sizeof(e->btns[0])) - 1) {
+        fprintf(stderr, "xsnip: переполнение списка кнопок\n");
+        return x + w;
+    }
     btn_t *b = &e->btns[e->nbtn++];
     b->id = id;
     b->x = x;
@@ -1300,7 +1305,13 @@ static void editor_relayout(editor_t *e) {
     x = ui_button(e, B_SHRINK, x, y, 26, h);
     int wlab = str_width(13, "толщина 10.5% ") + 10;
     x += 4 + wlab + 4;
-    ui_button(e, B_GROW, x, y, 26, h);
+    x = ui_button(e, B_GROW, x, y, 26, h);
+
+    /* правый край: копировать и «готово», ровно от края окна */
+    int xdone = e->cw - 8 - ICON_BTN;
+    int xcopy = xdone - 6 - ICON_BTN;
+    ui_button(e, B_COPY, xcopy, y, ICON_BTN, h);
+    ui_button(e, B_DONE, xdone, y, ICON_BTN, h);
 }
 
 static int editor_hit(editor_t *e, int x, int y) {
@@ -1361,26 +1372,6 @@ static void editor_paint(editor_t *e) {
     XFillRectangle(dpy, e->win, e->cgc, 0, PANEL_H - 1, e->cw, 1);
 
     editor_relayout(e);
-
-    /* правые кнопки: считаем позиции до отрисовки */
-    btn_t *bcopy = NULL, *bdone = NULL;
-    for (int i = 0; i < e->nbtn; i++) {
-        if (e->btns[i].id == B_COPY)
-            bcopy = &e->btns[i];
-        if (e->btns[i].id == B_DONE)
-            bdone = &e->btns[i];
-    }
-    if (!bcopy)
-        bcopy = &e->btns[e->nbtn++];
-    if (!bdone)
-        bdone = &e->btns[e->nbtn++];
-    bcopy->id = B_COPY;
-    bdone->id = B_DONE;
-    bcopy->y = bdone->y = 6;
-    bcopy->h = bdone->h = PANEL_H - 12;
-    bdone->w = bcopy->w = ICON_BTN;
-    bdone->x = e->cw - bdone->w - 8;
-    bcopy->x = bdone->x - bcopy->w - 6;
 
     /* подпись размера между − и + */
     int lab_x = 0, lab_w = 0;
@@ -1519,7 +1510,8 @@ static void editor_cursor_for(editor_t *e, int y) {
     if (zone == 0)
         c = e->cur_arrow;
     else
-        c = e->cfg.tool ? e->cur_text : e->cur_pen;
+        c = e->cfg.tool == 1 ? e->cur_text
+                             : (e->cfg.tool == 2 ? e->cur_crop : e->cur_pen);
     XDefineCursor(dpy, e->win, c);
     XFlush(dpy);
 }
@@ -1534,8 +1526,9 @@ static void editor_set_tool(editor_t *e, int tool) {
     e->cfg.tool = tool;
     if (e->cur_arrow == 0)
         return;
-    Cursor c = e->cursor_zone == 0 ? e->cur_arrow
-                                   : (tool == 1 ? e->cur_text : e->cur_pen);
+    Cursor c = e->cursor_zone == 0
+                   ? e->cur_arrow
+                   : (tool == 1 ? e->cur_text : (tool == 2 ? e->cur_crop : e->cur_pen));
     XDefineCursor(dpy, e->win, c);
     cfg_save(&e->cfg);
     editor_paint(e);
@@ -1838,7 +1831,8 @@ static void editor_run(editor_t *e) {
     editor_map_prepare(e);
     e->draw = XftDrawCreate(dpy, e->win, visual, cmap);
     e->cgc = XCreateGC(dpy, e->win, 0, NULL);
-    e->cur_pen = XCreateFontCursor(dpy, XC_crosshair);
+    e->cur_pen = XCreateFontCursor(dpy, XC_pencil);
+    e->cur_crop = XCreateFontCursor(dpy, XC_crosshair);
     e->cur_text = XCreateFontCursor(dpy, XC_xterm);
     e->crop_gc = XCreateGC(dpy, e->win, 0, NULL);
     XSetFunction(dpy, e->crop_gc, GXxor);
@@ -1846,7 +1840,9 @@ static void editor_run(editor_t *e) {
     XSetLineAttributes(dpy, e->crop_gc, 1, LineSolid, CapButt, JoinMiter);
     e->cur_arrow = XCreateFontCursor(dpy, XC_left_ptr);
     e->cursor_zone = 1;
-    XDefineCursor(dpy, e->win, e->cfg.tool ? e->cur_text : e->cur_pen);
+    XDefineCursor(dpy, e->win, e->cfg.tool == 1 ? e->cur_text
+                                               : (e->cfg.tool == 2 ? e->cur_crop
+                                                                   : e->cur_pen));
 
     XMapWindow(dpy, e->win);
     XSync(dpy, False);
@@ -2176,11 +2172,11 @@ static void editor_run(editor_t *e) {
                 e->done = 1;
                 goto finished;
             }
-            if (ks == XK_1) {
+            if (ks == XK_1 || ks == XK_p) {
                 editor_set_tool(e, 0);
-            } else if (ks == XK_2) {
+            } else if (ks == XK_2 || ks == XK_t) {
                 editor_set_tool(e, 1);
-            } else if (ks == XK_3) {
+            } else if (ks == XK_3 || ks == XK_r) {
                 editor_set_tool(e, 2);
             } else if (ks >= XK_4 && ks < XK_4 + NCOLORS) {
                 uint32_t c;
@@ -2215,6 +2211,7 @@ finished:
     XFreeGC(dpy, e->crop_gc);
     XFreeGC(dpy, e->cgc);
     XFreeCursor(dpy, e->cur_pen);
+    XFreeCursor(dpy, e->cur_crop);
     XFreeCursor(dpy, e->cur_text);
     XFreeCursor(dpy, e->cur_arrow);
     XDestroyWindow(dpy, e->win);
