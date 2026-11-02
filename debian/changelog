@@ -1,3 +1,16 @@
+xsnip (2.4-1) unstable; urgency=medium
+
+  * Region selection is fast now: the rectangle is a XOR rubber band and the
+    dimmed background is painted once, the sharpened selection is shown only
+    after the mouse stops (120 ms idle). Previously every mouse motion
+    re-uploaded the whole screen image to the X server.
+  * Excess motion events are coalesced in the selector too.
+  * Fix: the minus/plus size buttons were drawn as "icon + label" although
+    they have no icon, so the text was pushed to the right and the button
+    looked broken.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Mon, 02 Nov 2026 19:55:00 +0300
+
 xsnip (2.3-1) unstable; urgency=medium
 
   * Crop is fast now: the selection rectangle is drawn and erased with XOR

@@ -665,22 +665,29 @@ typedef struct {
     int x0, y0, x1, y1;
     int dragging;
     GC gc;
+    GC xor_gc;
     XftDraw *draw;
     XftFont *font;
     int done;
     rect_t rect;
+    int drawn;              /* XOR-рамка сейчас на экране */
+    int last_x, last_y, last_w, last_h;   /* где показана яркая область */
+    int pending_full;       /* выделение изменилось, нужен полный кадр */
+    int lab_x, lab_y, lab_w, lab_h;   /* где сейчас нарисована подпись размера */
 } sel_t;
 
-static void sel_damage(sel_t *s, int x, int y, int w, int h) {
-    if (w <= 0 || h <= 0)
+static int sel_rect_now(sel_t *s, int *rx, int *ry, int *rw, int *rh);
+static int str_width(int px, const char *s);
+static void draw_str(XftDraw *draw, uint32_t rgb, int px, int x, int y, const char *s);
+
+/* XOR-рамка: рисуется и стирается одной и той же операцией, без PutImage */
+static void sel_xor_frame(sel_t *s) {
+    int x, y, w, h;
+    if (!sel_rect_now(s, &x, &y, &w, &h))
         return;
-    if (x < 0) { w += x; x = 0; }
-    if (y < 0) { h += y; y = 0; }
-    if (x + w > s->shot->w) w = s->shot->w - x;
-    if (y + h > s->shot->h) h = s->shot->h - y;
-    if (w <= 0 || h <= 0)
-        return;
-    XPutImage(dpy, s->win, s->gc, s->dark, x, y, x, y, w, h);
+    XDrawRectangle(dpy, s->win, s->xor_gc, x, y, w, h);
+    XDrawRectangle(dpy, s->win, s->xor_gc, x + 1, y + 1, w - 2, h - 2);
+    s->drawn = !s->drawn;
 }
 
 static int sel_rect_now(sel_t *s, int *rx, int *ry, int *rw, int *rh) {
@@ -695,36 +702,40 @@ static int sel_rect_now(sel_t *s, int *rx, int *ry, int *rw, int *rh) {
     return 1;
 }
 
-static void sel_draw(sel_t *s) {
+/* Полный кадр — только когда мышь остановилась: показываем яркую область */
+static void sel_full(sel_t *s) {
     int x, y, w, h;
-    if (!sel_rect_now(s, &x, &y, &w, &h))
-        return;
-    XPutImage(dpy, s->win, s->gc, s->bright, x, y, x, y, w, h);
-    XSetForeground(dpy, s->gc, 0xffffff);
-    XSetLineAttributes(dpy, s->gc, 1, LineSolid, CapButt, JoinMiter);
-    XDrawRectangle(dpy, s->win, s->gc, x, y, w - 1, h - 1);
-
-    char label[64];
-    snprintf(label, sizeof(label), "%d x %d", w, h);
-    int ty = (y > 20) ? y - 6 : y + h + 16;
-    XSetForeground(dpy, s->gc, 0x000000);
-    int bl = ty + s->font->ascent / 2;
-    XftColor black = {0}, white = {0};
-    XRenderColor rc;
-    rc.red = 0; rc.green = 0; rc.blue = 0; rc.alpha = 0xffff;
-    XftColorAllocValue(dpy, visual, cmap, &rc, &black);
-    rc.red = rc.green = rc.blue = 0xffff;
-    XftColorAllocValue(dpy, visual, cmap, &rc, &white);
-    for (int dx = -1; dx <= 1; dx++)
-        for (int dy = -1; dy <= 1; dy++)
-            if (dx || dy)
-                XftDrawStringUtf8(s->draw, &black, s->font, x + 4 + dx, bl + dy,
-                                  (const FcChar8 *)label, (int)strlen(label));
-    XftDrawStringUtf8(s->draw, &white, s->font, x + 4, bl, (const FcChar8 *)label,
-                      (int)strlen(label));
-    XftColorFree(dpy, visual, cmap, &black);
-    XftColorFree(dpy, visual, cmap, &white);
-    (void)bl;
+    if (s->drawn)
+        sel_xor_frame(s);              /* стереть рамку */
+    if (s->last_w > 0)
+        XPutImage(dpy, s->win, s->gc, s->dark, s->last_x, s->last_y, s->last_x,
+                  s->last_y, s->last_w, s->last_h);
+    if (sel_rect_now(s, &x, &y, &w, &h)) {
+        XPutImage(dpy, s->win, s->gc, s->bright, x, y, x, y, w, h);
+        s->last_x = x;
+        s->last_y = y;
+        s->last_w = w;
+        s->last_h = h;
+    } else {
+        s->last_w = s->last_h = 0;
+    }
+    sel_xor_frame(s);                  /* и снова рамка, уже по яркому */
+    if (sel_rect_now(s, &x, &y, &w, &h)) {
+        char lab[64];
+        snprintf(lab, sizeof(lab), "%d x %d", w, h);
+        int tw = str_width(13, lab);
+        int lx = x + 4, ly = (y > 26 ? y - 22 : y + 6);
+        XSetForeground(dpy, s->gc, 0x000000);
+        XFillRectangle(dpy, s->win, s->gc, lx, ly, tw + 8, 18);
+        draw_str(s->draw, 0xffffff, 13, lx + 4, ly + 2, lab);
+        s->lab_x = lx;
+        s->lab_y = ly;
+        s->lab_w = tw + 8;
+        s->lab_h = 18;
+    } else {
+        s->lab_w = 0;
+    }
+    XFlush(dpy);
 }
 
 static rect_t select_area(img_t *shot) {
@@ -756,6 +767,11 @@ static rect_t select_area(img_t *shot) {
     img_free(dim);
 
     s.gc = XCreateGC(dpy, s.win, 0, NULL);
+    s.xor_gc = XCreateGC(dpy, s.win, 0, NULL);
+    XSetFunction(dpy, s.xor_gc, GXxor);
+    XSetForeground(dpy, s.xor_gc, 0xffffff);
+    XSetLineAttributes(dpy, s.xor_gc, 1, LineSolid, CapButt, JoinMiter);
+    XSetFont(dpy, s.xor_gc, XLoadFont(dpy, "fixed"));
     s.draw = XftDrawCreate(dpy, s.win, visual, cmap);
     s.font = XftFontOpenName(dpy, scr, "sans:pixelsize=13");
 
@@ -775,6 +791,22 @@ static rect_t select_area(img_t *shot) {
 
     for (;;) {
         XEvent ev;
+        if (!XPending(dpy)) {
+            int fd = XConnectionNumber(dpy);
+            fd_set fds;
+            FD_ZERO(&fds);
+            FD_SET(fd, &fds);
+            struct timeval tv;
+            tv.tv_sec = 0;
+            tv.tv_usec = 120000;   /* 120 мс тишины — можно показать яркую область */
+            if (select(fd + 1, &fds, NULL, NULL, &tv) == 0) {
+                if (s.pending_full) {
+                    sel_full(&s);
+                    s.pending_full = 0;
+                }
+                continue;
+            }
+        }
         XNextEvent(dpy, &ev);
         switch (ev.type) {
         case Expose:
@@ -794,26 +826,31 @@ static rect_t select_area(img_t *shot) {
             s.dragging = 1;
             break;
         case MotionNotify: {
-            int x, y, w, h;
-            int ox = 0, oy = 0, ow = 0, oh = 0;
-            sel_rect_now(&s, &ox, &oy, &ow, &oh);
+            XEvent nx;
+            while (XPending(dpy)) {
+                XPeekEvent(dpy, &nx);
+                if (nx.type != MotionNotify || nx.xmotion.window != s.win)
+                    break;
+                XNextEvent(dpy, &ev);
+            }
+            if (s.lab_w > 0) {
+                XPutImage(dpy, s.win, s.gc, s.dark, s.lab_x, s.lab_y, s.lab_x,
+                          s.lab_y, s.lab_w, s.lab_h);
+                s.lab_w = 0;
+            }
+            if (s.drawn)
+                sel_xor_frame(&s);         /* стереть старую рамку */
             s.x1 = ev.xmotion.x;
             s.y1 = ev.xmotion.y;
-            int nx, ny, nw, nh;
-            int has_new = sel_rect_now(&s, &nx, &ny, &nw, &nh);
-            x = ox; y = oy; w = ow; h = oh;
-            if (has_new) {
-                int minx = x < nx ? x : nx, miny = y < ny ? y : ny;
-                int maxx = (x + w) > (nx + nw) ? (x + w) : (nx + nw);
-                int maxy = (y + h) > (ny + nh) ? (y + h) : (ny + nh);
-                x = minx - 4; y = miny - 24; w = maxx - minx + 8; h = maxy - miny + 48;
-            }
-            sel_damage(&s, x, y, w, h);
-            sel_draw(&s);
+            sel_xor_frame(&s);             /* нарисовать новую */
+            s.pending_full = 1;
+            XFlush(dpy);
             break;
         }
         case ButtonRelease: {
             int x, y, w, h;
+            if (s.drawn)
+                sel_xor_frame(&s);
             if (!sel_rect_now(&s, &x, &y, &w, &h)) {
                 s.done = 1;
                 s.rect.ok = 0;
@@ -847,6 +884,7 @@ out:
     XUngrabKeyboard(dpy, CurrentTime);
     XftFontClose(dpy, s.font);
     XftDrawDestroy(s.draw);
+    XFreeGC(dpy, s.xor_gc);
     XFreeGC(dpy, s.gc);
     XDestroyWindow(dpy, s.win);
     XFreeCursor(dpy, cur);
@@ -1291,12 +1329,16 @@ static void editor_draw_button(editor_t *e, btn_t *b, int icon, const char *labe
     button_frame(e, b, active);
     int cy = b->y + b->h / 2;
     uint32_t col = enabled ? 0x202020 : 0xa8a8a4;
-    if (label) {
+    if (label && icon != ICON_NONE) {
         int tw = str_width(13, label);
         int total = ICON_SZ + TOOL_PAD_ICON + tw;
         int x0 = b->x + (b->w - total) / 2;
         draw_icon(e, e->win, icon, x0 + ICON_SZ / 2, cy, ICON_SZ, col);
         draw_str(e->draw, col, 13, x0 + ICON_SZ + TOOL_PAD_ICON,
+                 b->y + (b->h - font_get(13)->ascent - font_get(13)->descent) / 2, label);
+    } else if (label) {
+        int tw = str_width(13, label);
+        draw_str(e->draw, col, 13, b->x + (b->w - tw) / 2,
                  b->y + (b->h - font_get(13)->ascent - font_get(13)->descent) / 2, label);
     } else {
         draw_icon(e, e->win, icon, b->x + b->w / 2, cy, ICON_SZ, col);
