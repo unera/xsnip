@@ -1744,7 +1744,7 @@ finished:
 
 static void usage(FILE *f) {
     fprintf(f,
-            "использование: shot [опции]\n"
+            "использование: xsnip [опции]\n"
             "  -s, --select             выбрать область мышью\n"
             "  -o, --output FILE        сохранить в FILE (иначе — в буфер)\n"
             "  -d, --delay SEC          задержка перед снимком\n"
