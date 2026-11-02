@@ -23,7 +23,7 @@ WID=$(xdotool search --name "^xsnip$" | head -1)
 [ -z "$WID" ] && { echo "FAIL: окна нет"; cat /tmp/c_incr.log; exit 1; }
 eval "$(xdotool getwindowgeometry --shell "$WID")"
 echo "редактор ${WIDTH}x${HEIGHT}"
-xdotool mousemove $((X + WIDTH - 40)) $((Y + 22)) click 1
+xdotool mousemove $((X + WIDTH - 25)) $((Y + 22)) click 1
 sleep 2.5
 echo "--- процессы xsnip:"; pgrep -ax xsnip | head -3
 echo "--- забираем буфер:"

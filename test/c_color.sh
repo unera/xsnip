@@ -18,7 +18,7 @@ sleep 2
 WID=$(xdotool search --name "^xsnip$" | head -1)
 eval "$(xdotool getwindowgeometry --shell "$WID")"
 
-xdotool mousemove $((X + 260)) $((Y + 22)) click 1     # 2-й цвет (зелёный)
+xdotool mousemove $((X + 370)) $((Y + 22)) click 1     # 2-й цвет (зелёный)
 sleep 0.3
 xdotool mousemove $((X + 300)) $((Y + 300)) mousedown 1
 for i in $(seq 0 10); do xdotool mousemove $((X + 300 + i * 25)) $((Y + 300 + i * 8)); done
@@ -26,7 +26,7 @@ xdotool mouseup 1
 sleep 0.3
 xdotool mousemove $((X + 460)) $((Y + 22)) click 2     # правый клик — ничего не ломает
 sleep 0.2
-xdotool mousemove $((X + WIDTH - 40)) $((Y + 22)) click 1   # готово
+xdotool mousemove $((X + WIDTH - 25)) $((Y + 22)) click 1   # готово
 sleep 1.2
 echo "--- лог:"; cat /tmp/c_col.log
 echo "--- конфиг:"; cat "$XDG_CONFIG_HOME/xsnip/config" 2>/dev/null || echo "нет"

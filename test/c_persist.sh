@@ -15,15 +15,15 @@ setsid "$APP" -o /tmp/p1.png >/tmp/p1.log 2>&1 &
 sleep 2
 WID=$(xdotool search --name "^xsnip$" | head -1)
 eval "$(xdotool getwindowgeometry --shell "$WID")"
-xdotool mousemove $((X + 260)) $((Y + 22)) click 1     # зелёный
+xdotool mousemove $((X + 370)) $((Y + 22)) click 1     # зелёный
 sleep 0.2
-xdotool mousemove $((X + 540)) $((Y + 22)) click 1     # +
+xdotool mousemove $((X + 650)) $((Y + 22)) click 1     # +
 sleep 0.2
-xdotool mousemove $((X + 540)) $((Y + 22)) click 1     # +
+xdotool mousemove $((X + 650)) $((Y + 22)) click 1     # +
 sleep 0.2
 xdotool mousemove $((X + 175)) $((Y + 22)) click 1     # текст
 sleep 0.3
-xdotool mousemove $((X + WIDTH - 40)) $((Y + 22)) click 1
+xdotool mousemove $((X + WIDTH - 25)) $((Y + 22)) click 1
 sleep 1.2
 echo "--- конфиг после 1-го запуска:"; cat "$XDG_CONFIG_HOME/xsnip/config"
 
@@ -34,5 +34,5 @@ WID=$(xdotool search --name "^xsnip$" | head -1)
 eval "$(xdotool getwindowgeometry --shell "$WID")"
 python3 "$HERE/snapshot.py" "$WID" /tmp/p2_win.png
 echo "--- конфиг после 2-го запуска:"; cat "$XDG_CONFIG_HOME/xsnip/config"
-xdotool mousemove $((X + WIDTH - 40)) $((Y + 22)) click 1
+xdotool mousemove $((X + WIDTH - 25)) $((Y + 22)) click 1
 sleep 1

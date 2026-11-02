@@ -25,7 +25,7 @@ WID=$(xdotool search --name "^xsnip$" | head -1)
 [ -z "$WID" ] && { echo "FAIL: окна нет"; cat /tmp/m1.log; exit 1; }
 eval "$(xdotool getwindowgeometry --shell "$WID")"
 echo "окно ${WIDTH}x${HEIGHT} at ${X},${Y} (нижний монитор начинается с y=1080)"
-xdotool mousemove $((X + WIDTH - 40)) $((Y + 22)) click 1
+xdotool mousemove $((X + WIDTH - 25)) $((Y + 22)) click 1
 sleep 1.5
 python3 -c "import gi;gi.require_version('GdkPixbuf','2.0');from gi.repository import GdkPixbuf;pb=GdkPixbuf.Pixbuf.new_from_file('/tmp/m1.png');print('снимок:',pb.get_width(),'x',pb.get_height(),'(ожидание 1920x1200 — активный монитор)')"
 
@@ -37,6 +37,6 @@ sleep 2.5
 WID=$(xdotool search --name "^xsnip$" | head -1)
 eval "$(xdotool getwindowgeometry --shell "$WID")"
 echo "окно ${WIDTH}x${HEIGHT} at ${X},${Y} (не больше монитора 1920x1200)"
-xdotool mousemove $((X + WIDTH - 40)) $((Y + 22)) click 1
+xdotool mousemove $((X + WIDTH - 25)) $((Y + 22)) click 1
 sleep 2
 python3 -c "import gi;gi.require_version('GdkPixbuf','2.0');from gi.repository import GdkPixbuf;pb=GdkPixbuf.Pixbuf.new_from_file('/tmp/m2.png');print('снимок:',pb.get_width(),'x',pb.get_height(),'(ожидание 1920x2280 — все)')"

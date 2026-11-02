@@ -27,7 +27,7 @@ xdotool key Return
 sleep 0.5
 echo "--- окно после ввода:"
 python3 "$HERE/snapshot.py" "$WID" /tmp/c_text_win.png
-xdotool mousemove $((X + WIDTH - 40)) $((Y + 22)) click 1
+xdotool mousemove $((X + WIDTH - 25)) $((Y + 22)) click 1
 sleep 1.2
 echo "--- конфиг:"; cat "$XDG_CONFIG_HOME/xsnip/config" 2>/dev/null || echo "нет"
 python3 - <<'PY'

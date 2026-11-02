@@ -331,7 +331,7 @@ static void cfg_load(cfg_t *c) {
         else if (strcmp(key, "text") == 0)
             c->txt = atof(val);
         else if (strcmp(key, "tool") == 0)
-            c->tool = strcmp(val, "text") == 0 ? 1 : 0;
+            c->tool = strcmp(val, "text") == 0 ? 1 : (strcmp(val, "crop") == 0 ? 2 : 0);
         else if (strcmp(key, "window") == 0)
             c->wintype = strcmp(val, "normal") == 0 ? 1 : 0;
         else if (strcmp(key, "pos") == 0) {
@@ -379,7 +379,7 @@ static void cfg_save(const cfg_t *c) {
     fprintf(f, "pen=%s\n", num);
     fmt_num(num, sizeof(num), c->txt);
     fprintf(f, "text=%s\n", num);
-    fprintf(f, "tool=%s\n", c->tool ? "text" : "pen");
+    fprintf(f, "tool=%s\n", c->tool == 1 ? "text" : (c->tool == 2 ? "crop" : "pen"));
     fprintf(f, "window=%s\n", c->wintype ? "normal" : "dialog");
     fprintf(f, "pos=%s\n", POS_NAMES[c->pos]);
     fclose(f);
@@ -957,12 +957,13 @@ static void ops_free(ops_t *o) {
 
 enum {
     B_COPY = 1,
+    B_UNDO,
     B_PEN,
     B_TEXT,
+    B_CROP,
     B_SHRINK,
     B_GROW,
     B_DONE,
-    B_CANCEL,
     B_COLOR0 = 100
 };
 
@@ -997,6 +998,9 @@ typedef struct {
     double cur_w;
     uint32_t cur_color;
 
+    int crop_active;   /* тянем рамку вырезания */
+    int cx0, cy0, cx1, cy1;   /* рамка в координатах изображения */
+
     int text_active;
     char textbuf[TEXT_MAX];
     int text_len;
@@ -1014,6 +1018,7 @@ typedef struct {
 
 static void editor_relayout(editor_t *e);
 static void editor_repaint(editor_t *e);
+static void editor_crop_apply(editor_t *e);
 
 static void view_rebuild(editor_t *e) {
     if (e->view_xi) {
@@ -1123,6 +1128,76 @@ static void editor_draw_ops(editor_t *e, Drawable d, XftDraw *xd, int to_window)
     }
 }
 
+/* --- иконки: рисуем примитивами, никаких картинок и зависимостей */
+
+enum { ICON_NONE = 0, ICON_UNDO, ICON_COPY, ICON_CHECK, ICON_PEN, ICON_TEXT, ICON_CROP };
+
+static void icon_stroke(editor_t *e, uint32_t col, int w) {
+    XSetForeground(dpy, e->cgc, col);
+    XSetLineAttributes(dpy, e->cgc, w, LineSolid, CapRound, JoinRound);
+}
+
+static void draw_icon(editor_t *e, Drawable d, int icon, int cx, int cy, int sz,
+                      uint32_t col) {
+    int r = sz / 2;
+    int lw = sz - 6;
+    switch (icon) {
+    case ICON_UNDO: {
+        icon_stroke(e, col, 2);
+        XDrawArc(dpy, d, e->cgc, cx - r + 1, cy - r + 1, 2 * r - 2, 2 * r - 2,
+                 40 * 64, 260 * 64);
+        int hx = cx - r + 2, hy = cy - r + 3;
+        XPoint head[3] = {{hx - 2, hy}, {hx + 5, hy - 3}, {hx + 5, hy + 4}};
+        XSetForeground(dpy, e->cgc, col);
+        XFillPolygon(dpy, d, e->cgc, head, 3, Convex, CoordModeOrigin);
+        break;
+    }
+    case ICON_COPY: {
+        /* задний лист — только уголок справа сверху, передний — контуром */
+        icon_stroke(e, col, 1);
+        XDrawRectangle(dpy, d, e->cgc, cx - r + 5, cy - r + 1, lw - 2, lw - 2);
+        XSetForeground(dpy, e->cgc, 0xffffff);
+        XFillRectangle(dpy, d, e->cgc, cx - r + 1, cy - r + 4, lw - 1, lw - 1);
+        XSetForeground(dpy, e->cgc, col);
+        XDrawRectangle(dpy, d, e->cgc, cx - r + 1, cy - r + 4, lw - 1, lw - 1);
+        break;
+    }
+    case ICON_CHECK: {
+        icon_stroke(e, col, 3);
+        XDrawLine(dpy, d, e->cgc, cx - 6, cy, cx - 1, cy + 5);
+        XDrawLine(dpy, d, e->cgc, cx - 1, cy + 5, cx + 7, cy - 6);
+        break;
+    }
+    case ICON_PEN: {
+        icon_stroke(e, col, 2);
+        XDrawLine(dpy, d, e->cgc, cx - 6, cy + 6, cx + 2, cy - 2);
+        XPoint tip[3] = {{cx + 6, cy - 6}, {cx + 1, cy - 3}, {cx + 3, cy - 1}};
+        XSetForeground(dpy, e->cgc, col);
+        XFillPolygon(dpy, d, e->cgc, tip, 3, Convex, CoordModeOrigin);
+        break;
+    }
+    case ICON_TEXT: {
+        icon_stroke(e, col, 2);
+        XDrawLine(dpy, d, e->cgc, cx - 6, cy - 6, cx + 6, cy - 6);
+        XDrawLine(dpy, d, e->cgc, cx, cy - 6, cx, cy + 6);
+        break;
+    }
+    case ICON_CROP: {
+        icon_stroke(e, col, 2);
+        /* две уголковые скобки наискосок — как значок «обрезать» */
+        XDrawLine(dpy, d, e->cgc, cx - 6, cy - 2, cx - 6, cy - 6);
+        XDrawLine(dpy, d, e->cgc, cx - 6, cy - 6, cx - 2, cy - 6);
+        XDrawLine(dpy, d, e->cgc, cx + 6, cy + 2, cx + 6, cy + 6);
+        XDrawLine(dpy, d, e->cgc, cx + 6, cy + 6, cx + 2, cy + 6);
+        XSetLineAttributes(dpy, e->cgc, 1, LineSolid, CapButt, JoinMiter);
+        XDrawRectangle(dpy, d, e->cgc, cx - 5, cy - 5, 10, 10);
+        break;
+    }
+    default:
+        break;
+    }
+}
+
 /* --- панель */
 
 static int ui_button(editor_t *e, int id, int x, int y, int w, int h) {
@@ -1135,15 +1210,24 @@ static int ui_button(editor_t *e, int id, int x, int y, int w, int h) {
     return x + w;
 }
 
+#define ICON_SZ 16
+#define ICON_BTN 34
+#define TOOL_PAD_ICON 6
+
+static int tool_width(const char *label) {
+    return 8 + ICON_SZ + TOOL_PAD_ICON + str_width(13, label) + 10;
+}
+
 /* сколько места просит панель — меньше этого окно делать нельзя */
 static int panel_width(editor_t *e) {
     int w = 8;
-    w += str_width(13, "в буфер") + 20 + 10;
-    w += str_width(13, "перо") + 20 + 4;
-    w += str_width(13, "текст") + 20 + 10;
-    w += NCOLORS * (26 + 4) + 6;
+    w += ICON_BTN + 10;                        /* отменить */
+    w += tool_width("перо") + 4;               /* перо */
+    w += tool_width("текст") + 4;              /* текст */
+    w += tool_width("вырезать") + 10;          /* вырезать */
+    w += NCOLORS * (26 + 4) + 6;               /* цвета */
     w += 26 + 4 + str_width(13, "толщина 10.5%") + 10 + 4 + 26;
-    w += 10 + str_width(13, "готово") + 24 + 6 + str_width(13, "отменить") + 24 + 8;
+    w += 10 + ICON_BTN + 6 + ICON_BTN + 8;     /* буфер + готово */
     (void)e;
     return w;
 }
@@ -1152,13 +1236,13 @@ static void editor_relayout(editor_t *e) {
     e->nbtn = 0;
     int x = 8, y = 6, h = PANEL_H - 12;
 
-    x = ui_button(e, B_COPY, x, y, str_width(13, "в буфер") + 20, h);
+    x = ui_button(e, B_UNDO, x, y, ICON_BTN, h);
     x += 10;
-    int wpen = str_width(13, "перо") + 20;
-    int wtxt = str_width(13, "текст") + 20;
-    x = ui_button(e, B_PEN, x, y, wpen, h);
+    x = ui_button(e, B_PEN, x, y, tool_width("перо"), h);
     x += 4;
-    x = ui_button(e, B_TEXT, x, y, wtxt, h);
+    x = ui_button(e, B_TEXT, x, y, tool_width("текст"), h);
+    x += 4;
+    x = ui_button(e, B_CROP, x, y, tool_width("вырезать"), h);
     x += 10;
 
     for (int i = 0; i < NCOLORS; i++) {
@@ -1167,16 +1251,10 @@ static void editor_relayout(editor_t *e) {
     }
     x += 6;
 
-    int wsmall = 26;
-    x = ui_button(e, B_SHRINK, x, y, wsmall, h);
+    x = ui_button(e, B_SHRINK, x, y, 26, h);
     int wlab = str_width(13, "толщина 10.5% ") + 10;
     x += 4 + wlab + 4;
-    x = ui_button(e, B_GROW, x, y, wsmall, h);
-
-    int wdone = str_width(13, "готово") + 24;
-    ui_button(e, B_DONE, 0, y, wdone, h); /* место уточним ниже */
-    int wcancel = str_width(13, "отменить") + 24;
-    ui_button(e, B_CANCEL, 0, y, wcancel, h);
+    ui_button(e, B_GROW, x, y, 26, h);
 }
 
 static int editor_hit(editor_t *e, int x, int y) {
@@ -1188,7 +1266,7 @@ static int editor_hit(editor_t *e, int x, int y) {
     return 0;
 }
 
-static void editor_draw_button(editor_t *e, btn_t *b, const char *label, int active) {
+static void button_frame(editor_t *e, btn_t *b, int active) {
     uint32_t bg = active ? 0xc9d8f2 : 0xffffff;
     uint32_t bd = active ? 0x4a72d0 : 0xc9c9c4;
     if (e->hot == b->id && !active)
@@ -1197,9 +1275,24 @@ static void editor_draw_button(editor_t *e, btn_t *b, const char *label, int act
     XFillRectangle(dpy, e->win, e->cgc, b->x, b->y, b->w, b->h);
     XSetForeground(dpy, e->cgc, bg);
     XFillRectangle(dpy, e->win, e->cgc, b->x + 1, b->y + 1, b->w - 2, b->h - 2);
-    int tw = str_width(13, label);
-    draw_str(e->draw, 0x202020, 13, b->x + (b->w - tw) / 2,
-             b->y + (b->h - font_get(13)->ascent - font_get(13)->descent) / 2, label);
+}
+
+/* кнопка-иконка: label == NULL — только иконка по центру */
+static void editor_draw_button(editor_t *e, btn_t *b, int icon, const char *label,
+                               int active, int enabled) {
+    button_frame(e, b, active);
+    int cy = b->y + b->h / 2;
+    uint32_t col = enabled ? 0x202020 : 0xa8a8a4;
+    if (label) {
+        int tw = str_width(13, label);
+        int total = ICON_SZ + TOOL_PAD_ICON + tw;
+        int x0 = b->x + (b->w - total) / 2;
+        draw_icon(e, e->win, icon, x0 + ICON_SZ / 2, cy, ICON_SZ, col);
+        draw_str(e->draw, col, 13, x0 + ICON_SZ + TOOL_PAD_ICON,
+                 b->y + (b->h - font_get(13)->ascent - font_get(13)->descent) / 2, label);
+    } else {
+        draw_icon(e, e->win, icon, b->x + b->w / 2, cy, ICON_SZ, col);
+    }
 }
 
 static void editor_draw_swatch(editor_t *e, btn_t *b, uint32_t col, int active) {
@@ -1212,67 +1305,45 @@ static void editor_draw_swatch(editor_t *e, btn_t *b, uint32_t col, int active) 
 }
 
 static void editor_paint(editor_t *e) {
-    /* панель */
     XSetForeground(dpy, e->cgc, 0xf2f2ee);
     XFillRectangle(dpy, e->win, e->cgc, 0, 0, e->cw, PANEL_H);
     XSetForeground(dpy, e->cgc, 0xc9c9c4);
     XFillRectangle(dpy, e->win, e->cgc, 0, PANEL_H - 1, e->cw, 1);
 
     editor_relayout(e);
-    char lbl[64];
-    double val = e->cfg.tool ? e->cfg.txt : e->cfg.pen;
-    snprintf(lbl, sizeof(lbl), "кегль %.1f%% ", val);
 
-    /* правые кнопки: сначала считаем их позиции, потом рисуем всё подряд */
-    btn_t *bdone = NULL, *bcancel = NULL;
+    /* правые кнопки: считаем позиции до отрисовки */
+    btn_t *bcopy = NULL, *bdone = NULL;
     for (int i = 0; i < e->nbtn; i++) {
+        if (e->btns[i].id == B_COPY)
+            bcopy = &e->btns[i];
         if (e->btns[i].id == B_DONE)
             bdone = &e->btns[i];
-        if (e->btns[i].id == B_CANCEL)
-            bcancel = &e->btns[i];
     }
-    if (bdone) {
-        bdone->w = str_width(13, "готово") + 24;
-        bdone->x = e->cw - bdone->w - 8;
-    }
-    if (bcancel && bdone) {
-        bcancel->w = str_width(13, "отменить") + 24;
-        bcancel->x = bdone->x - bcancel->w - 6;
-    }
-
-    for (int i = 0; i < e->nbtn; i++) {
-        btn_t *b = &e->btns[i];
-        if (b->id == B_COPY)
-            editor_draw_button(e, b, "в буфер", 0);
-        else if (b->id == B_PEN)
-            editor_draw_button(e, b, "перо", !e->cfg.tool);
-        else if (b->id == B_TEXT)
-            editor_draw_button(e, b, "текст", e->cfg.tool);
-        else if (b->id == B_SHRINK)
-            editor_draw_button(e, b, "−", 0);
-        else if (b->id == B_GROW)
-            editor_draw_button(e, b, "+", 0);
-        else if (b->id == B_DONE)
-            ;
-        else if (b->id == B_CANCEL)
-            ;
-        else if (b->id >= B_COLOR0 && b->id < B_COLOR0 + NCOLORS) {
-            int idx = b->id - B_COLOR0;
-            uint32_t c;
-            parse_color(e->cfg.colors[idx], &c);
-            editor_draw_swatch(e, b, c, c == e->cfg.color);
-        }
-    }
+    if (!bcopy)
+        bcopy = &e->btns[e->nbtn++];
+    if (!bdone)
+        bdone = &e->btns[e->nbtn++];
+    bcopy->id = B_COPY;
+    bdone->id = B_DONE;
+    bcopy->y = bdone->y = 6;
+    bcopy->h = bdone->h = PANEL_H - 12;
+    bdone->w = bcopy->w = ICON_BTN;
+    bdone->x = e->cw - bdone->w - 8;
+    bcopy->x = bdone->x - bcopy->w - 6;
 
     /* подпись размера между − и + */
-    int lab_x = 0, lab_w = e->cw;
+    int lab_x = 0, lab_w = 0;
     for (int i = 0; i < e->nbtn; i++) {
         if (e->btns[i].id == B_SHRINK)
             lab_x = e->btns[i].x + e->btns[i].w;
         if (e->btns[i].id == B_GROW)
             lab_w = e->btns[i].x - lab_x;
     }
-    if (e->cfg.tool)
+    char lbl[64];
+    if (e->cfg.tool == 2)
+        snprintf(lbl, sizeof(lbl), "рамка");
+    else if (e->cfg.tool == 1)
         snprintf(lbl, sizeof(lbl), "кегль %.1f%%", e->cfg.txt);
     else
         snprintf(lbl, sizeof(lbl), "толщина %.1f%%", e->cfg.pen);
@@ -1280,10 +1351,43 @@ static void editor_paint(editor_t *e) {
     draw_str(e->draw, 0x202020, 13, lab_x + (lab_w - tw) / 2,
              (PANEL_H - font_get(13)->ascent - font_get(13)->descent) / 2, lbl);
 
-    if (bdone)
-        editor_draw_button(e, bdone, "готово", 0);
-    if (bcancel)
-        editor_draw_button(e, bcancel, "отменить", 0);
+    for (int i = 0; i < e->nbtn; i++) {
+        btn_t *b = &e->btns[i];
+        switch (b->id) {
+        case B_UNDO:
+            editor_draw_button(e, b, ICON_UNDO, NULL, 0, e->ops.n > 0);
+            break;
+        case B_COPY:
+            editor_draw_button(e, b, ICON_COPY, NULL, 0, 1);
+            break;
+        case B_DONE:
+            editor_draw_button(e, b, ICON_CHECK, NULL, 0, 1);
+            break;
+        case B_PEN:
+            editor_draw_button(e, b, ICON_PEN, "перо", e->cfg.tool == 0, 1);
+            break;
+        case B_TEXT:
+            editor_draw_button(e, b, ICON_TEXT, "текст", e->cfg.tool == 1, 1);
+            break;
+        case B_CROP:
+            editor_draw_button(e, b, ICON_CROP, "вырезать", e->cfg.tool == 2, 1);
+            break;
+        case B_SHRINK:
+            editor_draw_button(e, b, ICON_NONE, "−", 0, 1);
+            break;
+        case B_GROW:
+            editor_draw_button(e, b, ICON_NONE, "+", 0, 1);
+            break;
+        default:
+            if (b->id >= B_COLOR0 && b->id < B_COLOR0 + NCOLORS) {
+                int idx = b->id - B_COLOR0;
+                uint32_t c;
+                parse_color(e->cfg.colors[idx], &c);
+                editor_draw_swatch(e, b, c, c == e->cfg.color);
+            }
+            break;
+        }
+    }
     if (getenv("XSNIP_DEBUG"))
         for (int i = 0; i < e->nbtn; i++)
             fprintf(stderr, "btn id=%d x=%d w=%d\n", e->btns[i].id, e->btns[i].x,
@@ -1295,6 +1399,30 @@ static void editor_blit_canvas(editor_t *e) {
         return;
     XPutImage(dpy, e->win, e->cgc, e->view_xi, 0, 0, 0, PANEL_H, e->cw, e->ch);
     editor_draw_ops(e, e->win, e->draw, 1);
+    if (e->crop_active) {
+        int x0 = e->cx0 < e->cx1 ? e->cx0 : e->cx1;
+        int y0 = e->cy0 < e->cy1 ? e->cy0 : e->cy1;
+        int w = (e->cx0 < e->cx1 ? e->cx1 - e->cx0 : e->cx0 - e->cx1);
+        int h = (e->cy0 < e->cy1 ? e->cy1 - e->cy0 : e->cy0 - e->cy1);
+        int sx = e->ox + (int)(x0 * e->scale);
+        int sy = PANEL_H + e->oy + (int)(y0 * e->scale);
+        int sw = (int)(w * e->scale);
+        int sh = (int)(h * e->scale);
+        XSetForeground(dpy, e->cgc, 0x000000);
+        XSetLineAttributes(dpy, e->cgc, 1, LineSolid, CapButt, JoinMiter);
+        XDrawRectangle(dpy, e->win, e->cgc, sx - 1, sy - 1, sw + 2, sh + 2);
+        XDrawRectangle(dpy, e->win, e->cgc, sx + 1, sy + 1, sw - 2, sh - 2);
+        XSetForeground(dpy, e->cgc, 0xffffff);
+        XDrawRectangle(dpy, e->win, e->cgc, sx, sy, sw, sh);
+        char lab[64];
+        snprintf(lab, sizeof(lab), "%d x %d", w, h);
+        int ty = (sy - PANEL_H > 20) ? sy + 3 : sy + sh - 16;
+        int tw = str_width(13, lab);
+        XSetForeground(dpy, e->cgc, 0x000000);
+        XFillRectangle(dpy, e->win, e->cgc, sx + 3, ty - 1, tw + 6, 17);
+        draw_str(e->draw, 0xffffff, 13, sx + 6, ty, lab);
+    }
+
     if (e->text_active) {
         char line[TEXT_MAX + 32];
         snprintf(line, sizeof(line), "текст: %s_", e->textbuf);
@@ -1354,7 +1482,8 @@ static void editor_set_tool(editor_t *e, int tool) {
     e->cfg.tool = tool;
     if (e->cur_arrow == 0)
         return;
-    Cursor c = e->cursor_zone == 0 ? e->cur_arrow : (tool ? e->cur_text : e->cur_pen);
+    Cursor c = e->cursor_zone == 0 ? e->cur_arrow
+                                   : (tool == 1 ? e->cur_text : e->cur_pen);
     XDefineCursor(dpy, e->win, c);
     cfg_save(&e->cfg);
     editor_paint(e);
@@ -1362,6 +1491,8 @@ static void editor_set_tool(editor_t *e, int tool) {
 }
 
 static void editor_adjust(editor_t *e, int dir) {
+    if (e->cfg.tool == 2)
+        return;
     if (e->cfg.tool) {
         e->cfg.txt += dir * TXT_STEP;
         if (e->cfg.txt < TXT_MIN) e->cfg.txt = TXT_MIN;
@@ -1472,6 +1603,50 @@ static void editor_commit_text(editor_t *e) {
     e->text_len = 0;
     e->textbuf[0] = 0;
     editor_blit_canvas(e);
+    XFlush(dpy);
+}
+
+/* вырезать прямоугольник из картинки и продолжить редактирование внутри */
+static void editor_crop_apply(editor_t *e) {
+    int x0 = e->cx0 < e->cx1 ? e->cx0 : e->cx1;
+    int y0 = e->cy0 < e->cy1 ? e->cy0 : e->cy1;
+    int w = e->cx0 < e->cx1 ? e->cx1 - e->cx0 : e->cx0 - e->cx1;
+    int h = e->cy0 < e->cy1 ? e->cy1 - e->cy0 : e->cy0 - e->cy1;
+    e->crop_active = 0;
+
+    if (x0 < 0) { w += x0; x0 = 0; }
+    if (y0 < 0) { h += y0; y0 = 0; }
+    if (x0 + w > e->iw) w = e->iw - x0;
+    if (y0 + h > e->ih) h = e->ih - y0;
+    if (w < 5 || h < 5) {
+        editor_blit_canvas(e);
+        XFlush(dpy);
+        return;
+    }
+
+    img_t *c = img_crop(e->src, x0, y0, w, h);
+    img_free(e->src);
+    e->src = c;
+    e->iw = c->w;
+    e->ih = c->h;
+    e->basis = e->iw < e->ih ? e->iw : e->ih;
+
+    for (int i = 0; i < e->ops.n; i++) {
+        op_t *op = &e->ops.items[i];
+        if (op->kind == OP_STROKE)
+            for (int k = 0; k < op->n; k++) {
+                op->pts[k * 2] -= x0;
+                op->pts[k * 2 + 1] -= y0;
+            }
+        else {
+            op->tx -= x0;
+            op->ty -= y0;
+        }
+    }
+
+    view_rebuild(e);
+    editor_repaint(e);
+    editor_set_tool(e, 0);   /* после обрезки — снова перо */
     XFlush(dpy);
 }
 
@@ -1611,6 +1786,19 @@ static void editor_run(editor_t *e) {
             break;
         case MotionNotify: {
             int x = ev.xmotion.x, y = ev.xmotion.y;
+            if (e->crop_active) {
+                int ix = (int)((x - e->ox) / e->scale);
+                int iy = (int)((y - PANEL_H - e->oy) / e->scale);
+                if (ix < 0) ix = 0;
+                if (iy < 0) iy = 0;
+                if (ix > e->iw) ix = e->iw;
+                if (iy > e->ih) iy = e->ih;
+                e->cx1 = ix;
+                e->cy1 = iy;
+                editor_blit_canvas(e);
+                XFlush(dpy);
+                break;
+            }
             if (e->drawing) {
                 int ix = (int)((x - e->ox) / e->scale);
                 int iy = (int)((y - PANEL_H - e->oy) / e->scale);
@@ -1671,10 +1859,20 @@ static void editor_run(editor_t *e) {
                 int id = editor_hit(e, x, y);
                 if (id == B_COPY) {
                     editor_copy(e);
+                } else if (id == B_UNDO) {
+                    if (e->ops.n > 0) {
+                        op_t *op = &e->ops.items[e->ops.n - 1];
+                        free(op->pts);
+                        free(op->text);
+                        e->ops.n--;
+                        editor_blit_canvas(e);
+                    }
                 } else if (id == B_PEN) {
                     editor_set_tool(e, 0);
                 } else if (id == B_TEXT) {
                     editor_set_tool(e, 1);
+                } else if (id == B_CROP) {
+                    editor_set_tool(e, 2);
                 } else if (id == B_SHRINK) {
                     editor_adjust(e, -1);
                 } else if (id == B_GROW) {
@@ -1690,10 +1888,17 @@ static void editor_run(editor_t *e) {
                     editor_done(e);
                     if (e->done)
                         goto finished;
-                } else if (id == B_CANCEL) {
-                    e->done = 1;
-                    goto finished;
                 }
+                XFlush(dpy);
+                break;
+            }
+            if (e->cfg.tool == 2) {
+                int ix = (int)((x - e->ox) / e->scale);
+                int iy = (int)((y - PANEL_H - e->oy) / e->scale);
+                e->cx0 = e->cx1 = ix;
+                e->cy0 = e->cy1 = iy;
+                e->crop_active = 1;
+                editor_blit_canvas(e);
                 XFlush(dpy);
                 break;
             }
@@ -1723,6 +1928,10 @@ static void editor_run(editor_t *e) {
         case ButtonRelease: {
             if (ev.xbutton.button != Button1)
                 break;
+            if (e->crop_active) {
+                editor_crop_apply(e);
+                break;
+            }
             if (getenv("XSNIP_DEBUG"))
                 fprintf(stderr, "release button=%d drawing=%d cur_n=%d\n", ev.xbutton.button,
                         e->drawing, e->cur_n);
@@ -1819,9 +2028,11 @@ static void editor_run(editor_t *e) {
                 editor_set_tool(e, 0);
             } else if (ks == XK_2) {
                 editor_set_tool(e, 1);
-            } else if (ks >= XK_3 && ks < XK_3 + NCOLORS) {
+            } else if (ks == XK_3) {
+                editor_set_tool(e, 2);
+            } else if (ks >= XK_4 && ks < XK_4 + NCOLORS) {
                 uint32_t c;
-                if (parse_color(e->cfg.colors[ks - XK_3], &c)) {
+                if (parse_color(e->cfg.colors[ks - XK_4], &c)) {
                     e->cfg.color = c;
                     cfg_save(&e->cfg);
                     editor_paint(e);
@@ -2051,7 +2262,8 @@ int main(int argc, char **argv) {
     editor_run(&e);
 
     ops_free(&e.ops);
-    img_free(shot);
+    /* после «вырезать» e.src уже другая картинка, shot освобождать нельзя дважды */
+    img_free(e.src);
     if (xim) {
         if (xic_editor)
             XDestroyIC(xic_editor);

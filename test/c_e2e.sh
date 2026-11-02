@@ -30,7 +30,7 @@ xdotool mouseup 1
 sleep 0.4
 
 echo "window ${WIDTH}x${HEIGHT}"
-xdotool mousemove $((X + WIDTH - 45)) $((Y + 22)) click 1
+xdotool mousemove $((X + WIDTH - 25)) $((Y + 22)) click 1
 sleep 1.2
 
 echo "--- log:"; cat /tmp/c_shot.log

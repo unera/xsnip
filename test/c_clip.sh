@@ -20,14 +20,14 @@ WID=$(xdotool search --name "^xsnip$" | head -1)
 eval "$(xdotool getwindowgeometry --shell "$WID")"
 
 # сменим цвет на 2-й (зелёный): кнопка цвета — ищем по позиции после «текст»
-xdotool mousemove $((X + 200)) $((Y + 22)) click 1   # примерно 2-й свотч
+xdotool mousemove $((X + 370)) $((Y + 22)) click 1   # второй цвет
 sleep 0.3
 # штрих
 xdotool mousemove $((X + 300)) $((Y + 300)) mousedown 1
 for i in $(seq 0 10); do xdotool mousemove $((X + 300 + i * 25)) $((Y + 300 + i * 5)); done
 xdotool mouseup 1
 sleep 0.3
-xdotool mousemove $((X + WIDTH - 45)) $((Y + 22)) click 1   # готово -> буфер
+xdotool mousemove $((X + WIDTH - 25)) $((Y + 22)) click 1   # готово -> буфер
 sleep 1.5
 
 echo "--- процессы xsnip:"; pgrep -af "/xsnip$" | head -3

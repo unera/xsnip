@@ -1,3 +1,17 @@
+xsnip (2.2-1) unstable; urgency=medium
+
+  * Toolbar rework: icons drawn with Xlib primitives, no image files.
+    Undo button (counter-clockwise arrow) on the left, clipboard and done
+    buttons on the right as icons, pen/text/crop with icon plus label.
+  * New "crop" tool: drag a rectangle in the editor and the image is cut down
+    to it, saved strokes follow the offset, then the pen is selected again.
+  * Tool shortcut keys are now 1/2/3 for pen/text/crop, 4..8 for the palette.
+  * The "close without saving" button is gone: Esc and the window close
+    button do that.
+  * Fix: double free of the image after cropping.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Mon, 02 Nov 2026 18:20:00 +0300
+
 xsnip (2.1-1) unstable; urgency=medium
 
   * Multi-monitor support through Xinerama: without -s the screen under the

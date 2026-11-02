@@ -33,7 +33,7 @@ WID=$(xdotool search --name "^xsnip$" | head -1)
 if [ -z "$WID" ]; then echo "FAIL: редактор не открылся"; cat /tmp/c_sel.log; exit 1; fi
 eval "$(xdotool getwindowgeometry --shell "$WID")"
 echo "редактор ${WIDTH}x${HEIGHT} at ${X},${Y}"
-xdotool mousemove $((X + WIDTH - 40)) $((Y + 22)) click 1
+xdotool mousemove $((X + WIDTH - 25)) $((Y + 22)) click 1
 sleep 1.2
 echo "--- лог:"; cat /tmp/c_sel.log
 if [ -f "$OUT" ]; then

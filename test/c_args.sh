@@ -23,7 +23,7 @@ xdotool mousemove $((X + 300)) $((Y + 300)) mousedown 1
 for i in $(seq 0 10); do xdotool mousemove $((X + 300 + i * 20)) $((Y + 300)); done
 xdotool mouseup 1
 sleep 0.3
-xdotool mousemove $((X + WIDTH - 40)) $((Y + 22)) click 1
+xdotool mousemove $((X + WIDTH - 25)) $((Y + 22)) click 1
 sleep 1.2
 echo "--- лог:"; cat /tmp/c_args.log
 echo "--- конфиг:"; cat "$XDG_CONFIG_HOME/xsnip/config" 2>/dev/null || echo "нет"

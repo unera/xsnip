@@ -34,12 +34,11 @@ python3 "$HERE/snapshot.py" "$WID" /tmp/fix_marker.png
 xdotool key Escape    # отменить ввод текста
 sleep 0.3
 
-# «отменить» — файла быть не должно
+# кнопка-стрелка (undo) должна убрать штрих
 eval "$(xdotool getwindowgeometry --shell "$WID")"
-grep "^btn id=7" /tmp/fix.log | tail -1
-xdotool mousemove $((X + WIDTH - 160)) $((Y + 22)) click 1
-sleep 1
-if [ -f "$OUT" ]; then echo "странно: файл появился"; else echo "отмена: файла нет — верно"; fi
+xdotool mousemove $((X + 25)) $((Y + 22)) click 1
+sleep 0.4
+python3 "$HERE/snapshot.py" "$WID" /tmp/fix_undo.png
 
 # теперь то же, но сохраняем: смотрим, где штрих
 rm -f "$OUT"
@@ -55,7 +54,7 @@ sleep 0.2
 for i in $(seq 0 10); do xdotool mousemove $((X + 200 + i * 40)) $((Y + 300)); sleep 0.05; done
 xdotool mouseup 1
 sleep 0.6
-xdotool mousemove $((X + WIDTH - 40)) $((Y + 22)) click 1
+xdotool mousemove $((X + WIDTH - 25)) $((Y + 22)) click 1
 sleep 1.5
 python3 - <<'PY'
 import gi
