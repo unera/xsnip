@@ -1265,6 +1265,9 @@ typedef struct {
     int crop_drawn;
     int crop_anchor;   /* первый клик: ждём второй (режим «клик-клик») */
     int ax, ay;
+
+    int resize_pending;    /* размер изменился, кэш ещё не пересобран */
+    long resize_deadline;
     int crop_px, crop_py, crop_pw, crop_ph;   /* прошлая рамка в координатах окна */
 
     int text_active;
@@ -1846,6 +1849,12 @@ static int input_font_px(void) {
 }
 
 static void editor_blit_canvas(editor_t *e) {
+    if (e->resize_pending) {
+        /* во время ресайза не пересобираем картинку — просто заливаем фон */
+        XSetForeground(dpy, e->cgc, 0x9a9a96);
+        XFillRectangle(dpy, e->win, e->cgc, 0, panel_h, (unsigned)e->cw, (unsigned)e->ch);
+        return;
+    }
     if (!e->view_xi)
         return;
     XPutImage(dpy, e->win, e->cgc, e->view_xi, 0, 0, 0, panel_h, e->cw, e->ch);
@@ -2256,10 +2265,21 @@ static void editor_run(editor_t *e) {
                 long left = e->tip_deadline - now_ms();
                 wait = left > 0 ? left : 0;
             }
+            if (e->resize_pending) {
+                long left = e->resize_deadline - now_ms();
+                if (left < wait)
+                    wait = left > 0 ? left : 0;
+            }
             struct timeval tv;
             tv.tv_sec = wait / 1000;
             tv.tv_usec = (wait % 1000) * 1000;
             if (select(fd + 1, &fds, NULL, NULL, &tv) == 0) {
+                if (e->resize_pending && now_ms() >= e->resize_deadline) {
+                    e->resize_pending = 0;
+                    editor_rebuild(e);
+                    editor_repaint(e);
+                    XFlush(dpy);
+                }
                 if (e->tip_btn && !e->tip_shown && now_ms() >= e->tip_deadline)
                     tip_show(e);
                 continue;
@@ -2286,8 +2306,13 @@ static void editor_run(editor_t *e) {
                     e->ch = nh - panel_h;
                     if (e->ch < 2)
                         e->ch = 2;
-                    editor_rebuild(e);
-                    editor_repaint(e);
+                    /* пересборка кэша стоит миллионы пикселей — откладываем,
+                     * пока пользователь не отпустит рамку */
+                    e->resize_pending = 1;
+                    e->resize_deadline = now_ms() + 120;
+                    editor_paint(e);
+                    editor_blit_canvas(e);
+                    XFlush(dpy);
                 }
             }
             break;

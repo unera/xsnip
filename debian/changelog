@@ -1,3 +1,12 @@
+xsnip (3.0-1) unstable; urgency=medium
+
+  * Resizing the editor window is fast now: while the size keeps changing only
+    the toolbar is redrawn and the canvas is filled with grey, and the scaled
+    image is rebuilt once, 120 ms after the last change. Before, every
+    configure event re-ran the bilinear rescale of the whole image.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Mon, 02 Nov 2026 23:50:00 +0300
+
 xsnip (2.9-1) unstable; urgency=medium
 
   * The toolbar scales with the tallest monitor: base is 800 points of height,
