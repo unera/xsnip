@@ -155,7 +155,8 @@ XSNIP_LANG=zh xsnip -s        # китайский независимо от л�
 - `xsnip.c` — вся программа
 - `Makefile` — сборка через pkg-config
 - `debian/` — упаковка (non-native, 3.0 quilt)
-- `man/xsnip.1` — man-страница
+- `man/xsnip.1` — man-страница (английский), `man/ru/` и `man/zh_CN/` — переводы;
+  устанавливаются в `/usr/share/man/{,ru,zh_CN}/man1`
 - `legacy/shot.py` — первая версия на Python+GTK3 (оставлена для истории)
 - `test/` — e2e-прогоны под Xvfb + xdotool, включая проверку на настоящем i3:
 

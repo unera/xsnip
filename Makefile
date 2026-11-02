@@ -18,6 +18,10 @@ install: xsnip
 	install -m 755 xsnip $(DESTDIR)$(PREFIX)/bin/xsnip
 	install -d $(DESTDIR)$(PREFIX)/share/man/man1
 	install -m 644 man/xsnip.1 $(DESTDIR)$(PREFIX)/share/man/man1/xsnip.1
+	install -d $(DESTDIR)$(PREFIX)/share/man/ru/man1
+	install -m 644 man/ru/xsnip.1 $(DESTDIR)$(PREFIX)/share/man/ru/man1/xsnip.1
+	install -d $(DESTDIR)$(PREFIX)/share/man/zh_CN/man1
+	install -m 644 man/zh_CN/xsnip.1 $(DESTDIR)$(PREFIX)/share/man/zh_CN/man1/xsnip.1
 
 test-gui: xsnip
 	bash test/c_e2e.sh

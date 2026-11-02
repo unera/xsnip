@@ -1,174 +1,172 @@
-.\" xsnip — скриншот с мини-редактором
-.TH XSNIP 1 "2026-11-02" "xsnip 3.1" "Пользовательские команды"
-.SH ИМЯ
-xsnip \- снимок экрана или области с мини-редактором (перо и текст)
-.SH СИНТАКСИС
+.\" xsnip — screenshot tool with a minimal markup editor
+.TH XSNIP 1 "2026-11-02" "xsnip 3.1" "User Commands"
+.SH NAME
+xsnip \- take a screenshot of the screen or a region and mark it up
+.SH SYNOPSIS
 .B xsnip
 .RB [ \-s ]
 .RB [ \-o
-.IR файл ]
+.IR file ]
 .RB [ \-d
-.IR секунды ]
+.IR seconds ]
 .RB [ \-a ]
 .RB [ \-\-colors
 .IR c1,c2,c3,c4,c5 ]
 .RB [ \-\-color
 .IR N|#rrggbb ]
 .RB [ \-\-pen
-.IR процент ]
+.IR percent ]
 .RB [ \-\-text
-.IR процент ]
+.IR percent ]
 .RB [ \-\-window
 .IR dialog|normal ]
 .RB [ \-\-pos
 .IR center|tl|tr|bl|br ]
-.SH ОПИСАНИЕ
+.SH DESCRIPTION
 .B xsnip
-снимает экран (или выделенный мышью прямоугольник), открывает небольшое окно
-с картинкой и минимальным набором инструментов — перо и текст.
-По кнопке «готово» результат уходит в буфер обмена или пишется в файл.
-.SH ОПЦИИ
+grabs the screen (or a rectangle selected with the mouse), opens a small
+window with the image and a minimal set of tools: a pen and a text tool.
+Clicking the checkmark button sends the result to the clipboard or writes it
+to a file.
+.SH OPTIONS
 .TP
 .B \-s, \-\-select
-Выбрать область мышью. Esc или прямоугольник меньше 5x5 отменяют снимок
-(код возврата 1).
+Select a region with the mouse. Esc or a rectangle smaller than 5x5 cancels
+the shot (exit status 1).
 .TP
 .B \-a, \-\-all
-Снять весь виртуальный экран (все мониторы). По умолчанию снимается только
-тот экран, на котором стоит указатель, а если задан
+Grab the whole virtual screen (all monitors). By default only the screen
+under the pointer is grabbed, and after
 .B \-s
-— тот, где было выделение.
+the screen where the selection was made.
 .TP
-.BI \-o,\ \-\-output\  файл
-Записать PNG в
-.I файл
-вместо копирования в буфер обмена.
+.BI \-o,\ \-\-output\  file
+Write a PNG to
+.I file
+instead of copying it to the clipboard.
 .TP
-.BI \-d,\ \-\-delay\  секунды
-Подождать перед снимком (дробные значения допустимы).
+.BI \-d,\ \-\-delay\  seconds
+Wait before taking the shot. Fractions are allowed.
 .TP
 .BI \-\-colors\  c1,c2,c3,c4,c5
-Палитра из пяти цветов в виде
+Palette of five colours as
 .BR #rrggbb .
-По умолчанию: красный, зелёный, жёлтый, белый, чёрный.
+The default is red, green, yellow, white, black.
 .TP
 .BI \-\-color\  N|#rrggbb
-Активный цвет: номер в палитре (с единицы) или свой
-.BR #rrggbb .
+Active colour: an index in the palette (starting at one) or a
+.B #rrggbb
+value.
 .TP
-.BI \-\-pen\  процент
-Толщина пера в процентах от
-.IR min(ширина,\ высота)
-картинки, от 0.1 до 5 (по умолчанию 1).
+.BI \-\-pen\  percent
+Pen width as a percentage of
+.IR min(width,\ height)
+of the image, from 0.1 to 5 (default 1).
 .TP
-.BI \-\-text\  процент
-Кегль текста в тех же процентах, от 1 до 50 (по умолчанию 10).
+.BI \-\-text\  percent
+Text size in the same percentage, from 1 to 50 (default 10).
 .TP
 .BI \-\-window\  dialog|normal
-Тип окна редактора.
+Window type of the editor.
 .B dialog
-(по умолчанию) помечает окно как диалог, и тайловый менеджер (i3)
-держит его плавающим, а позиция из
-.B \-\-pos
-применяется.
+(the default) marks it as a dialog, so a tiling window manager such as i3
+keeps it floating and honours
+.BR \-\-pos .
 .B normal
-даёт обычное окно, которое менеджер кладёт в тайл.
+gives a regular window that the window manager tiles.
 .TP
 .BI \-\-pos\  center|tl|tr|bl|br
-Положение окна редактора: центр или углы (top-left, top-right, bottom-left,
-bottom-right) с отступом в 10 точек. Отсчитывается от того экрана, на котором
-открывается окно; окно никогда не бывает больше этого экрана.
+Position of the editor window: centre or a corner (top-left, top-right,
+bottom-left, bottom-right) with a 10-point margin, counted from the monitor
+the window opens on.
 .TP
 .B \-h, \-\-help
-Краткая справка.
-.SH РЕДАКТОР
-Панель сверху масштабируется от самого высокого монитора: за базу взята
-высота 800 точек, на 1200 она в полтора раза крупнее. Слева кнопка отмены
-(стрелка против часовой), затем три
-инструмента — «перо», «текст», «вырезать», пять квадратов палитры, кнопки
-уменьшения и увеличения размера; справа две кнопки-иконки — копировать
-в буфер и «готово» (галочка).
-.PP
-Инструмент «вырезать»: обвести прямоугольник прямо в окне редактора (зажать
-кнопку и тянуть) либо поставить два угла двумя кликами — картинка обрежется
-до прямоугольника, нарисованное сдвинется вместе с ней, и работа продолжится
-с уменьшенной картинкой (после обрезки инструмент возвращается к перу).
-Обрезка кладётся в тот же стек отмены, что и штрихи: Ctrl+Z возвращает
-и прежний размер картинки, и положение нарисованного.
-.PP
-Пока идёт ввод текста, в точке вставки нарисована вертикальная черта высотой
-с выбранный кегль — видно, откуда начнётся надпись. Сама строка ввода внизу
-окна набирается крупно: её кегль равен высоте самого высокого монитора,
-делённой на 25 (для экрана 1200 точек — 48 пикселей), чтобы читалось и на
-маленьком экране.
+Print a short help message.
+.SH THE EDITOR
+The toolbar is scaled from the tallest monitor (800 points of height is the
+base). From the left: the undo button (a counter-clockwise arrow), the tools
+"pen", "text" and "crop", five colour swatches, the buttons that make the
+tool smaller and bigger, and on the right the clipboard and the checkmark
+("done") buttons. Hovering over a button shows a hint with its name and the
+keyboard shortcut.
 .PP
 .nf
-p, 1         перо
-t, 2         текст
-r, 3         вырезать
-
-Буквенные шорткаты и Ctrl+Z срабатывают по физической клавише и не зависят
-от раскладки: на русской раскладке работают так же, как на английской.
-4 ... 8      цвет из палитры
-Ctrl+Z       отменить последнее действие — штрих, надпись или обрезку
-             (то же, что кнопка-стрелка)
-Ctrl+C       скопировать в буфер
-колесо мыши  размер активного инструмента
-Enter        поставить набранный текст
-Esc          отменить ввод текста, иначе закрыть окно
+p, 1         pen
+t, 2         text
+r, 3         crop
+4 ... 8      colour from the palette
+Ctrl+Z       undo the last stroke, text or crop
+Enter        place the typed text
+Esc          cancel text input, otherwise close the window
 .fi
-.SH ФАЙЛЫ
-.TP
-.I $XDG_CONFIG_HOME/xsnip/config
-Сохранённые настройки (обычно
-.IR ~/.config/xsnip/config ):
-активный цвет, размеры инструментов, тип и положение окна. Аргументы
-командной строки главнее сохранённого. Удаление файла возвращает значения
-по умолчанию.
-.SH ЯЗЫК
-Интерфейс, подсказки и справка переводятся на английский (по умолчанию),
-русский и китайский. Язык берётся из переменных окружения в таком порядке:
+.PP
+The "crop" tool: drag a rectangle inside the editor (or set two corners with
+two clicks), and the image is cut down to it. The annotations move with the
+image, and the pen is selected again. Cropping goes on the same undo stack as
+the strokes.
+.PP
+Sizes are given in percent of
+.IR min(width,\ height)
+of the image, so they look the same on 800x600 and on 4K: the pen runs from
+0.1 to 5 percent (0.1 step, default 1), the text from 1 to 50 percent (0.5
+step, default 10).
+.PP
+Text is typed through XIM, so Cyrillic and Chinese work as in any other X11
+application. While typing, a caret as tall as the chosen text size shows where
+the text will start, and the input line at the bottom is drawn with a font of
+"tallest monitor height / 25".
+.SH LANGUAGE
+The interface, the tooltips and the help are translated into English (the
+default), Russian and Chinese. The language is taken from the environment:
 .BR XSNIP_LANG ,
+then
 .BR LC_ALL ,
 .BR LC_MESSAGES ,
 .BR LANG
-(достаточно первых двух букв: ru, zh).
-.SH КОД ВОЗВРАТА
-0 — успех; 1 — снимок отменён или файл не записан; 2 — ошибка (нет дисплея,
-неверные аргументы).
-.SH ПРИМЕРЫ
-Снять область и положить в буфер:
+(the first two letters matter: ru, zh).
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/xsnip/config
+Saved settings (usually
+.IR ~/.config/xsnip/config ):
+the active colour, the tool sizes, the window type and position. Command line
+arguments win over the saved values. Removing the file restores the defaults.
+.SH CLIPBOARD
+After the editor closes, the picture in the clipboard is held by a forked
+process of
+.B xsnip
+that owns the X11 selection and answers requests for
+.BR image/png
+(with the INCR protocol for large images). This is required because an X11
+selection only exists while its owner runs; the helper exits when another
+program takes the selection over.
+.SH EXIT STATUS
+0 on success; 1 if the shot was cancelled or the file was not written; 2 on
+error (no display, bad arguments).
+.SH EXAMPLES
+Take a region and put it into the clipboard:
 .PP
 .nf
 xsnip -s
 .fi
 .PP
-Снять весь экран и сохранить:
+Take the whole virtual screen and save it:
 .PP
 .nf
-xsnip -o /tmp/снимок.png
+xsnip -a -o /tmp/screen.png
 .fi
 .PP
-Весь виртуальный экран (все мониторы) в файл:
-.PP
-.nf
-xsnip -a -o /tmp/всё.png
-.fi
-.PP
-Плавающее окно в правом нижнем углу, зелёное перо:
+A floating window in the bottom right corner with a green pen:
 .PP
 .nf
 xsnip -s --window dialog --pos br --color 2
 .fi
-.SH ЗАМЕЧАНИЯ
-Работает только на X11: под Wayland снимок корневого окна недоступен.
-Мониторы определяются через расширение Xinerama.
-Картинку в буфере держит отдельный процесс-демон, пока содержимое не заберут,
-поэтому данные не теряются после выхода
-.BR xsnip .
-.SH АВТОР
+.SH NOTES
+X11 only: under Wayland grabbing the root window is not possible. Monitors are
+detected through the Xinerama extension.
+.SH AUTHOR
 Dmitry Oboukhov <unera@debian.org>
-.SH СМОТРИТЕ ТАКЖЕ
+.SH SEE ALSO
 .BR scrot (1),
 .BR xclip (1),
 .BR import (1)

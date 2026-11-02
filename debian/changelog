@@ -1,3 +1,11 @@
+xsnip (3.2-1) unstable; urgency=medium
+
+  * Manual pages in three languages: the English xsnip.1 is now the main page,
+    the Russian one moved to man/ru and a Chinese translation was added in
+    man/zh_CN; make install puts them into /usr/share/man/{,ru,zh_CN}/man1.
+  * The Russian and English pages document the clipboard helper (the forked
+    process that owns the X11 selection) and the language selection.
+
 xsnip (3.1-1) unstable; urgency=medium
 
   * Security: no more system("mkdir -p ...") built from XDG_CONFIG_HOME —
