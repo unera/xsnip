@@ -40,6 +40,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/cursorfont.h>
+#include <X11/extensions/Xinerama.h>
 #include <X11/keysym.h>
 
 #include <zlib.h>
@@ -81,6 +82,64 @@ static GC gc;
 static XIM xim;
 static XIC xic_editor;
 
+
+/* ---------------------------------------------------------------- мониторы */
+
+typedef struct {
+    int x, y, w, h;
+} mon_t;
+
+static mon_t mons[16];
+static int nmons;
+
+static void monitors_init(void) {
+    nmons = 0;
+    if (XineramaIsActive(dpy)) {
+        int n = 0;
+        XineramaScreenInfo *si = XineramaQueryScreens(dpy, &n);
+        if (si) {
+            for (int i = 0; i < n && nmons < (int)(sizeof(mons) / sizeof(mons[0])); i++) {
+                mons[nmons].x = si[i].x_org;
+                mons[nmons].y = si[i].y_org;
+                mons[nmons].w = si[i].width;
+                mons[nmons].h = si[i].height;
+                nmons++;
+            }
+            XFree(si);
+        }
+    }
+    if (nmons == 0) {
+        XWindowAttributes wa;
+        XGetWindowAttributes(dpy, root, &wa);
+        mons[0].x = 0;
+        mons[0].y = 0;
+        mons[0].w = wa.width;
+        mons[0].h = wa.height;
+        nmons = 1;
+    }
+    if (getenv("XSNIP_DEBUG")) {
+        for (int i = 0; i < nmons; i++)
+            fprintf(stderr, "monitor %d: %dx%d+%d+%d\n", i, mons[i].w, mons[i].h,
+                    mons[i].x, mons[i].y);
+    }
+}
+
+/* экран, на котором лежит точка (курсор или центр выделения) */
+static mon_t monitor_at(int x, int y) {
+    for (int i = 0; i < nmons; i++)
+        if (x >= mons[i].x && x < mons[i].x + mons[i].w && y >= mons[i].y &&
+            y < mons[i].y + mons[i].h)
+            return mons[i];
+    return mons[0];
+}
+
+static void pointer_pos(int *x, int *y) {
+    Window r, c;
+    int wx, wy;
+    unsigned mask;
+    *x = *y = 0;
+    XQueryPointer(dpy, root, &r, &c, x, y, &wx, &wy, &mask);
+}
 
 static void die(const char *fmt, ...) {
     va_list ap;
@@ -903,6 +962,7 @@ enum {
     B_SHRINK,
     B_GROW,
     B_DONE,
+    B_CANCEL,
     B_COLOR0 = 100
 };
 
@@ -942,6 +1002,9 @@ typedef struct {
     int text_len;
     int text_x, text_y;   /* координаты вставки в изображении */
     int text_wi;          /* ширина ввода в окне */
+
+    mon_t mon;       /* экран, на котором живёт окно */
+    int cursor_zone; /* 0 — панель, 1 — картинка */
 
     XftDraw *draw;
     GC cgc;
@@ -1015,7 +1078,7 @@ static void view_rebuild(editor_t *e) {
 static void editor_draw_ops(editor_t *e, Drawable d, XftDraw *xd, int to_window) {
     double s = to_window ? e->scale : 1.0;
     int ox = to_window ? e->ox : 0;
-    int oy = to_window ? e->oy : 0;
+    int oy = to_window ? e->oy + PANEL_H : 0;
     for (int i = 0; i < e->ops.n; i++) {
         op_t *op = &e->ops.items[i];
         if (op->kind == OP_STROKE) {
@@ -1080,7 +1143,7 @@ static int panel_width(editor_t *e) {
     w += str_width(13, "текст") + 20 + 10;
     w += NCOLORS * (26 + 4) + 6;
     w += 26 + 4 + str_width(13, "толщина 10.5%") + 10 + 4 + 26;
-    w += 10 + str_width(13, "готово") + 24 + 8;
+    w += 10 + str_width(13, "готово") + 24 + 6 + str_width(13, "отменить") + 24 + 8;
     (void)e;
     return w;
 }
@@ -1111,7 +1174,9 @@ static void editor_relayout(editor_t *e) {
     x = ui_button(e, B_GROW, x, y, wsmall, h);
 
     int wdone = str_width(13, "готово") + 24;
-    ui_button(e, B_DONE, e->win ? 0 : 0, y, wdone, h); /* место уточним ниже */
+    ui_button(e, B_DONE, 0, y, wdone, h); /* место уточним ниже */
+    int wcancel = str_width(13, "отменить") + 24;
+    ui_button(e, B_CANCEL, 0, y, wcancel, h);
 }
 
 static int editor_hit(editor_t *e, int x, int y) {
@@ -1158,7 +1223,23 @@ static void editor_paint(editor_t *e) {
     double val = e->cfg.tool ? e->cfg.txt : e->cfg.pen;
     snprintf(lbl, sizeof(lbl), "кегль %.1f%% ", val);
 
-    btn_t *bdone = NULL;
+    /* правые кнопки: сначала считаем их позиции, потом рисуем всё подряд */
+    btn_t *bdone = NULL, *bcancel = NULL;
+    for (int i = 0; i < e->nbtn; i++) {
+        if (e->btns[i].id == B_DONE)
+            bdone = &e->btns[i];
+        if (e->btns[i].id == B_CANCEL)
+            bcancel = &e->btns[i];
+    }
+    if (bdone) {
+        bdone->w = str_width(13, "готово") + 24;
+        bdone->x = e->cw - bdone->w - 8;
+    }
+    if (bcancel && bdone) {
+        bcancel->w = str_width(13, "отменить") + 24;
+        bcancel->x = bdone->x - bcancel->w - 6;
+    }
+
     for (int i = 0; i < e->nbtn; i++) {
         btn_t *b = &e->btns[i];
         if (b->id == B_COPY)
@@ -1172,7 +1253,9 @@ static void editor_paint(editor_t *e) {
         else if (b->id == B_GROW)
             editor_draw_button(e, b, "+", 0);
         else if (b->id == B_DONE)
-            bdone = b;
+            ;
+        else if (b->id == B_CANCEL)
+            ;
         else if (b->id >= B_COLOR0 && b->id < B_COLOR0 + NCOLORS) {
             int idx = b->id - B_COLOR0;
             uint32_t c;
@@ -1197,17 +1280,14 @@ static void editor_paint(editor_t *e) {
     draw_str(e->draw, 0x202020, 13, lab_x + (lab_w - tw) / 2,
              (PANEL_H - font_get(13)->ascent - font_get(13)->descent) / 2, lbl);
 
-    if (getenv("XSNIP_DEBUG")) {
-        for (int i = 0; i < e->nbtn; i++)
-            fprintf(stderr, "btn id=%d x=%d y=%d w=%d h=%d\n", e->btns[i].id,
-                    e->btns[i].x, e->btns[i].y, e->btns[i].w, e->btns[i].h);
-    }
-    if (bdone) {
-        int w = str_width(13, "готово") + 24;
-        bdone->x = e->cw - w - 8;
-        bdone->w = w;
+    if (bdone)
         editor_draw_button(e, bdone, "готово", 0);
-    }
+    if (bcancel)
+        editor_draw_button(e, bcancel, "отменить", 0);
+    if (getenv("XSNIP_DEBUG"))
+        for (int i = 0; i < e->nbtn; i++)
+            fprintf(stderr, "btn id=%d x=%d w=%d\n", e->btns[i].id, e->btns[i].x,
+                    e->btns[i].w);
 }
 
 static void editor_blit_canvas(editor_t *e) {
@@ -1230,6 +1310,16 @@ static void editor_blit_canvas(editor_t *e) {
         XDrawRectangle(dpy, e->win, e->cgc, x, y, w - 1, h - 1);
         draw_str(e->draw, 0x101010, px, x + 10, y + 6, line);
         (void)e->text_wi;
+        /* где именно начнётся текст: вертикальная черта высотой с кегль */
+        int cx = e->ox + (int)(e->text_x * e->scale);
+        int cy = PANEL_H + e->oy + (int)(e->text_y * e->scale);
+        int ch = (int)((e->cfg.txt / 100.0 * e->basis) * e->scale + 0.5);
+        if (ch < 5)
+            ch = 5;
+        XSetForeground(dpy, e->cgc, e->cfg.color);
+        XFillRectangle(dpy, e->win, e->cgc, cx, cy, 2, ch);
+        XSetForeground(dpy, e->cgc, e->cfg.color & 0x7f7f7f);
+        XFillRectangle(dpy, e->win, e->cgc, cx, cy + ch, (int)(20 * e->scale) + 4, 1);
     }
 }
 
@@ -1244,11 +1334,27 @@ static void editor_rebuild(editor_t *e) {
 
 /* --- действия */
 
+static void editor_cursor_for(editor_t *e, int y) {
+    int zone = (y < PANEL_H) ? 0 : 1;
+    if (zone == e->cursor_zone)
+        return;
+    e->cursor_zone = zone;
+    Cursor c;
+    if (zone == 0)
+        c = e->cur_arrow;
+    else
+        c = e->cfg.tool ? e->cur_text : e->cur_pen;
+    XDefineCursor(dpy, e->win, c);
+    XFlush(dpy);
+}
+
 static void editor_set_tool(editor_t *e, int tool) {
     if (e->cfg.tool == tool)
         return;
     e->cfg.tool = tool;
-    Cursor c = tool ? e->cur_text : e->cur_pen;
+    if (e->cur_arrow == 0)
+        return;
+    Cursor c = e->cursor_zone == 0 ? e->cur_arrow : (tool ? e->cur_text : e->cur_pen);
     XDefineCursor(dpy, e->win, c);
     cfg_save(&e->cfg);
     editor_paint(e);
@@ -1313,6 +1419,8 @@ static img_t *editor_flatten(editor_t *e) {
 }
 
 static void editor_copy(editor_t *e) {
+    if (getenv("XSNIP_DEBUG"))
+        fprintf(stderr, "copy: ops=%d\n", e->ops.n);
     img_t *flat = editor_flatten(e);
     unsigned char *png;
     size_t len;
@@ -1408,19 +1516,17 @@ static void editor_map_prepare(editor_t *e) {
 }
 
 static void editor_place(editor_t *e, int winw, int winh) {
-    XWindowAttributes wa;
-    XGetWindowAttributes(dpy, root, &wa);
-    int W = wa.width, H = wa.height;
-    int x = 0, y = 0;
+    int mx = e->mon.x, my = e->mon.y, W = e->mon.w, H = e->mon.h;
+    int x = mx, y = my;
     switch (e->cfg.pos) {
-    case 0: x = (W - winw) / 2; y = (H - winh) / 2; break;
-    case 1: x = MARGIN; y = MARGIN; break;
-    case 2: x = W - winw - MARGIN; y = MARGIN; break;
-    case 3: x = MARGIN; y = H - winh - MARGIN; break;
-    case 4: x = W - winw - MARGIN; y = H - winh - MARGIN; break;
+    case 0: x = mx + (W - winw) / 2; y = my + (H - winh) / 2; break;
+    case 1: x = mx + MARGIN; y = my + MARGIN; break;
+    case 2: x = mx + W - winw - MARGIN; y = my + MARGIN; break;
+    case 3: x = mx + MARGIN; y = my + H - winh - MARGIN; break;
+    case 4: x = mx + W - winw - MARGIN; y = my + H - winh - MARGIN; break;
     }
-    if (x < 0) x = 0;
-    if (y < 0) y = 0;
+    if (x < mx) x = mx;
+    if (y < my) y = my;
 
     XSizeHints hints = {0};
     hints.flags = USPosition | PPosition;
@@ -1437,17 +1543,20 @@ static void editor_focus(editor_t *e) {
 }
 
 static void editor_run(editor_t *e) {
-    XWindowAttributes wa;
-    XGetWindowAttributes(dpy, root, &wa);
-    int maxw = wa.width * 95 / 100;
-    int maxh = wa.height * 85 / 100;
+    /* никогда не больше экрана, на котором живём */
+    int maxw = e->mon.w * 95 / 100;
+    int maxh = e->mon.h * 85 / 100;
     int winw = e->iw < maxw ? e->iw : maxw;
     int winh = e->ih + PANEL_H < maxh ? e->ih + PANEL_H : maxh;
     int needed = panel_width(e);
-    if (needed > maxw)
-        needed = maxw;
+    if (needed > e->mon.w - 2 * MARGIN)
+        needed = e->mon.w - 2 * MARGIN;
     if (winw < needed)
         winw = needed;
+    if (winw > e->mon.w)
+        winw = e->mon.w;
+    if (winh > e->mon.h)
+        winh = e->mon.h;
 
     e->win = XCreateSimpleWindow(dpy, root, 0, 0, winw, winh, 0, 0, 0xf2f2ee);
     if (!e->win)
@@ -1462,6 +1571,7 @@ static void editor_run(editor_t *e) {
     e->cur_pen = XCreateFontCursor(dpy, XC_crosshair);
     e->cur_text = XCreateFontCursor(dpy, XC_xterm);
     e->cur_arrow = XCreateFontCursor(dpy, XC_left_ptr);
+    e->cursor_zone = 1;
     XDefineCursor(dpy, e->win, e->cfg.tool ? e->cur_text : e->cur_pen);
 
     XMapWindow(dpy, e->win);
@@ -1531,6 +1641,7 @@ static void editor_run(editor_t *e) {
                 }
                 XFlush(dpy);
             } else {
+                editor_cursor_for(e, y);
                 int hit = editor_hit(e, x, y);
                 if (hit != e->hot) {
                     e->hot = hit;
@@ -1579,6 +1690,9 @@ static void editor_run(editor_t *e) {
                     editor_done(e);
                     if (e->done)
                         goto finished;
+                } else if (id == B_CANCEL) {
+                    e->done = 1;
+                    goto finished;
                 }
                 XFlush(dpy);
                 break;
@@ -1609,6 +1723,9 @@ static void editor_run(editor_t *e) {
         case ButtonRelease: {
             if (ev.xbutton.button != Button1)
                 break;
+            if (getenv("XSNIP_DEBUG"))
+                fprintf(stderr, "release button=%d drawing=%d cur_n=%d\n", ev.xbutton.button,
+                        e->drawing, e->cur_n);
             if (e->drawing) {
                 e->drawing = 0;
                 if (e->cur_n > 0) {
@@ -1746,6 +1863,7 @@ static void usage(FILE *f) {
     fprintf(f,
             "использование: xsnip [опции]\n"
             "  -s, --select             выбрать область мышью\n"
+            "  -a, --all                весь виртуальный экран (все мониторы)\n"
             "  -o, --output FILE        сохранить в FILE (иначе — в буфер)\n"
             "  -d, --delay SEC          задержка перед снимком\n"
             "      --colors c1,c2,c3,c4,c5  палитра (#rrggbb)\n"
@@ -1765,6 +1883,7 @@ int main(int argc, char **argv) {
     cfg_load(&cfg);
 
     int select_flag = 0;
+    int all_screens = 0;
     const char *outpath = NULL;
     double delay = 0.0;
 
@@ -1772,6 +1891,8 @@ int main(int argc, char **argv) {
         const char *a = argv[i];
         if (!strcmp(a, "-s") || !strcmp(a, "--select")) {
             select_flag = 1;
+        } else if (!strcmp(a, "-a") || !strcmp(a, "--all")) {
+            all_screens = 1;
         } else if (!strcmp(a, "-o") || !strcmp(a, "--output")) {
             if (++i >= argc)
                 die("нужно имя файла после %s", a);
@@ -1867,6 +1988,8 @@ int main(int argc, char **argv) {
     depth = DefaultDepth(dpy, scr);
     gc = DefaultGC(dpy, scr);
 
+    monitors_init();
+
     A_CLIPBOARD = XInternAtom(dpy, "CLIPBOARD", False);
     A_TARGETS = XInternAtom(dpy, "TARGETS", False);
     A_INCR = XInternAtom(dpy, "INCR", False);
@@ -1886,18 +2009,34 @@ int main(int argc, char **argv) {
         nanosleep(&ts, NULL);
     }
 
-    img_t *shot = capture_root();
+    int px = 0, py = 0;
+    pointer_pos(&px, &py);
+    mon_t mon = monitor_at(px, py);
+
+    img_t *full = capture_root();
+    img_t *shot = NULL;
 
     if (select_flag) {
-        rect_t r = select_area(shot);
+        rect_t r = select_area(full);
         if (!r.ok) {
-            img_free(shot);
+            img_free(full);
             XCloseDisplay(dpy);
             return 1;
         }
-        img_t *crop = img_crop(shot, r.x, r.y, r.w, r.h);
-        img_free(shot);
-        shot = crop;
+        shot = img_crop(full, r.x, r.y, r.w, r.h);
+        img_free(full);
+        /* редактор открываем на том экране, где выделяли */
+        mon = monitor_at(r.x + r.w / 2, r.y + r.h / 2);
+    } else if (all_screens) {
+        shot = full;
+        if (getenv("XSNIP_DEBUG"))
+            fprintf(stderr, "снимок всего виртуального экрана: %dx%d\n", shot->w, shot->h);
+    } else {
+        if (getenv("XSNIP_DEBUG"))
+            fprintf(stderr, "снимок экрана %dx%d+%d+%d (под курсором)\n", mon.w, mon.h,
+                    mon.x, mon.y);
+        shot = img_crop(full, mon.x, mon.y, mon.w, mon.h);
+        img_free(full);
     }
 
     editor_t e = {0};
@@ -1906,6 +2045,7 @@ int main(int argc, char **argv) {
     e.ih = shot->h;
     e.cfg = cfg;
     e.outpath = outpath;
+    e.mon = mon;
     e.basis = e.iw < e.ih ? e.iw : e.ih;
 
     editor_run(&e);

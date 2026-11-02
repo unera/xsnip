@@ -2,3 +2,4 @@ shot
 shot_asan
 __pycache__/
 test/__pycache__/
+test/fake_xinerama.so

@@ -1,3 +1,16 @@
+xsnip (2.1-1) unstable; urgency=medium
+
+  * Multi-monitor support through Xinerama: without -s the screen under the
+    pointer is grabbed, after -s the screen where the selection was made; the
+    new -a/--all takes the whole virtual screen.
+  * The editor window is bounded by its own screen and positioned relative to
+    it, so it no longer straddles two monitors.
+  * New "cancel" button: close without saving.
+  * Text input now shows a caret at the insertion point, sized as the font.
+  * Fix: strokes jumped up by the toolbar height when the mouse was released
+    (the panel offset was missing when repainting saved operations).
+  * Fix: the drawing cursor was shown over the toolbar.
+
 xsnip (2.0-1) unstable; urgency=medium
 
   * Initial release.

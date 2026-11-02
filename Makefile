@@ -1,5 +1,5 @@
 CC ?= cc
-PKGS = x11 xft fontconfig zlib
+PKGS = x11 xft fontconfig zlib xinerama
 
 # флаги pkg-config идут отдельно от CFLAGS: дистрибутивы передают свои CFLAGS
 # в окружении, а переменные командной строки перебили бы += в этом файле
