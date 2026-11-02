@@ -4,6 +4,9 @@
 открывает маленький редактор (перо + текст), по «готово» кладёт результат
 в буфер или в файл.
 
+Репозиторий: <https://github.com/unera/xsnip> · пакет: `apt install xsnip`
+из <https://vds2.uvw.ru/debian>.
+
 Один файл `xsnip.c`, C99. Зависимости — только X11-библиотеки и zlib,
 никаких GTK, Python и ImageMagick:
 
