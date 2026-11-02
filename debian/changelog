@@ -1,3 +1,16 @@
+xsnip (2.3-1) unstable; urgency=medium
+
+  * Crop is fast now: the selection rectangle is drawn and erased with XOR
+    instead of repainting the whole canvas on every mouse motion; excess
+    motion events are coalesced. A 200-step drag takes well under a second
+    where it used to take tens of seconds.
+  * Crop works with two clicks as well: the first click sets a corner, the
+    second one the opposite corner (dragging still works).
+  * Undo (button and Ctrl+Z) covers cropping: it restores the previous image
+    size and shifts the annotations back.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Mon, 02 Nov 2026 19:05:00 +0300
+
 xsnip (2.2-1) unstable; urgency=medium
 
   * Toolbar rework: icons drawn with Xlib primitives, no image files.

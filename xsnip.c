@@ -914,7 +914,7 @@ static int str_width(int px, const char *s) {
 
 /* ------------------------------------------------------------------- ops */
 
-enum { OP_STROKE = 0, OP_TEXT = 1 };
+enum { OP_STROKE = 0, OP_TEXT = 1, OP_CROP = 2 };
 
 typedef struct {
     int kind;
@@ -925,6 +925,8 @@ typedef struct {
     int *pts;       /* x0,y0,x1,y1,... в координатах изображения */
     char *text;
     int tx, ty;     /* левый верх текста */
+    img_t *prev;    /* OP_CROP: картинка до обрезки */
+    int ox, oy;     /* OP_CROP: на сколько сдвинули всё остальное */
 } op_t;
 
 typedef struct {
@@ -948,6 +950,7 @@ static void ops_free(ops_t *o) {
     for (int i = 0; i < o->n; i++) {
         free(o->items[i].pts);
         free(o->items[i].text);
+        img_free(o->items[i].prev);
     }
     free(o->items);
     memset(o, 0, sizeof(*o));
@@ -1000,6 +1003,11 @@ typedef struct {
 
     int crop_active;   /* тянем рамку вырезания */
     int cx0, cy0, cx1, cy1;   /* рамка в координатах изображения */
+    GC crop_gc;        /* XOR: рамка рисуется и стирается без перерисовки */
+    int crop_drawn;
+    int crop_anchor;   /* первый клик: ждём второй (режим «клик-клик») */
+    int ax, ay;
+    int crop_px, crop_py, crop_pw, crop_ph;   /* прошлая рамка в координатах окна */
 
     int text_active;
     char textbuf[TEXT_MAX];
@@ -1394,35 +1402,33 @@ static void editor_paint(editor_t *e) {
                     e->btns[i].w);
 }
 
+/* Рамка вырезания: XOR-рисование, чтобы стирать её без перерисовки картинки
+ * (раньше каждого движения мыши стоило мегабайт PutImage). */
+static void crop_xor(editor_t *e, int x, int y, int w, int h, int label) {
+    if (w < 0) { x += w; w = -w; }
+    if (h < 0) { y += h; h = -h; }
+    XDrawRectangle(dpy, e->win, e->crop_gc, x, y, w, h);
+    XDrawRectangle(dpy, e->win, e->crop_gc, x + 1, y + 1, w - 2, h - 2);
+    if (label) {
+        char lab[64];
+        snprintf(lab, sizeof(lab), "%d x %d", w, h);
+        XDrawString(dpy, e->win, e->crop_gc, x + 4, (y > 16 ? y - 4 : y + h + 14), lab,
+                    (int)strlen(lab));
+    }
+}
+
+static void crop_erase(editor_t *e) {
+    if (!e->crop_drawn)
+        return;
+    crop_xor(e, e->crop_px, e->crop_py, e->crop_pw, e->crop_ph, 1);
+    e->crop_drawn = 0;
+}
+
 static void editor_blit_canvas(editor_t *e) {
     if (!e->view_xi)
         return;
     XPutImage(dpy, e->win, e->cgc, e->view_xi, 0, 0, 0, PANEL_H, e->cw, e->ch);
     editor_draw_ops(e, e->win, e->draw, 1);
-    if (e->crop_active) {
-        int x0 = e->cx0 < e->cx1 ? e->cx0 : e->cx1;
-        int y0 = e->cy0 < e->cy1 ? e->cy0 : e->cy1;
-        int w = (e->cx0 < e->cx1 ? e->cx1 - e->cx0 : e->cx0 - e->cx1);
-        int h = (e->cy0 < e->cy1 ? e->cy1 - e->cy0 : e->cy0 - e->cy1);
-        int sx = e->ox + (int)(x0 * e->scale);
-        int sy = PANEL_H + e->oy + (int)(y0 * e->scale);
-        int sw = (int)(w * e->scale);
-        int sh = (int)(h * e->scale);
-        XSetForeground(dpy, e->cgc, 0x000000);
-        XSetLineAttributes(dpy, e->cgc, 1, LineSolid, CapButt, JoinMiter);
-        XDrawRectangle(dpy, e->win, e->cgc, sx - 1, sy - 1, sw + 2, sh + 2);
-        XDrawRectangle(dpy, e->win, e->cgc, sx + 1, sy + 1, sw - 2, sh - 2);
-        XSetForeground(dpy, e->cgc, 0xffffff);
-        XDrawRectangle(dpy, e->win, e->cgc, sx, sy, sw, sh);
-        char lab[64];
-        snprintf(lab, sizeof(lab), "%d x %d", w, h);
-        int ty = (sy - PANEL_H > 20) ? sy + 3 : sy + sh - 16;
-        int tw = str_width(13, lab);
-        XSetForeground(dpy, e->cgc, 0x000000);
-        XFillRectangle(dpy, e->win, e->cgc, sx + 3, ty - 1, tw + 6, 17);
-        draw_str(e->draw, 0xffffff, 13, sx + 6, ty, lab);
-    }
-
     if (e->text_active) {
         char line[TEXT_MAX + 32];
         snprintf(line, sizeof(line), "текст: %s_", e->textbuf);
@@ -1479,6 +1485,10 @@ static void editor_cursor_for(editor_t *e, int y) {
 static void editor_set_tool(editor_t *e, int tool) {
     if (e->cfg.tool == tool)
         return;
+    if (e->crop_anchor) {
+        crop_erase(e);
+        e->crop_anchor = 0;
+    }
     e->cfg.tool = tool;
     if (e->cur_arrow == 0)
         return;
@@ -1607,6 +1617,44 @@ static void editor_commit_text(editor_t *e) {
 }
 
 /* вырезать прямоугольник из картинки и продолжить редактирование внутри */
+static void editor_undo(editor_t *e) {
+    if (e->ops.n == 0)
+        return;
+    op_t *op = &e->ops.items[e->ops.n - 1];
+    if (op->kind == OP_CROP) {
+        img_free(e->src);
+        e->src = op->prev;
+        op->prev = NULL;
+        e->iw = e->src->w;
+        e->ih = e->src->h;
+        e->basis = e->iw < e->ih ? e->iw : e->ih;
+        for (int i = 0; i < e->ops.n - 1; i++) {
+            op_t *o = &e->ops.items[i];
+            if (o->kind == OP_STROKE)
+                for (int k = 0; k < o->n; k++) {
+                    o->pts[k * 2] += op->ox;
+                    o->pts[k * 2 + 1] += op->oy;
+                }
+            else if (o->kind == OP_TEXT) {
+                o->tx += op->ox;
+                o->ty += op->oy;
+            }
+        }
+        e->ops.n--;
+        view_rebuild(e);
+    } else if (op->kind == OP_TEXT) {
+        free(op->text);
+        op->text = NULL;
+        e->ops.n--;
+    } else {
+        free(op->pts);
+        op->pts = NULL;
+        e->ops.n--;
+    }
+    editor_repaint(e);
+    XFlush(dpy);
+}
+
 static void editor_crop_apply(editor_t *e) {
     int x0 = e->cx0 < e->cx1 ? e->cx0 : e->cx1;
     int y0 = e->cy0 < e->cy1 ? e->cy0 : e->cy1;
@@ -1624,21 +1672,26 @@ static void editor_crop_apply(editor_t *e) {
         return;
     }
 
+    crop_erase(e);
     img_t *c = img_crop(e->src, x0, y0, w, h);
-    img_free(e->src);
+    op_t *cop = ops_push(&e->ops);
+    cop->kind = OP_CROP;
+    cop->prev = e->src;     /* старая картинка живёт до отмены */
+    cop->ox = x0;
+    cop->oy = y0;
     e->src = c;
     e->iw = c->w;
     e->ih = c->h;
     e->basis = e->iw < e->ih ? e->iw : e->ih;
 
-    for (int i = 0; i < e->ops.n; i++) {
+    for (int i = 0; i < e->ops.n - 1; i++) {
         op_t *op = &e->ops.items[i];
         if (op->kind == OP_STROKE)
             for (int k = 0; k < op->n; k++) {
                 op->pts[k * 2] -= x0;
                 op->pts[k * 2 + 1] -= y0;
             }
-        else {
+        else if (op->kind == OP_TEXT) {
             op->tx -= x0;
             op->ty -= y0;
         }
@@ -1745,6 +1798,10 @@ static void editor_run(editor_t *e) {
     e->cgc = XCreateGC(dpy, e->win, 0, NULL);
     e->cur_pen = XCreateFontCursor(dpy, XC_crosshair);
     e->cur_text = XCreateFontCursor(dpy, XC_xterm);
+    e->crop_gc = XCreateGC(dpy, e->win, 0, NULL);
+    XSetFunction(dpy, e->crop_gc, GXxor);
+    XSetForeground(dpy, e->crop_gc, 0xffffff);
+    XSetLineAttributes(dpy, e->crop_gc, 1, LineSolid, CapButt, JoinMiter);
     e->cur_arrow = XCreateFontCursor(dpy, XC_left_ptr);
     e->cursor_zone = 1;
     XDefineCursor(dpy, e->win, e->cfg.tool ? e->cur_text : e->cur_pen);
@@ -1785,8 +1842,42 @@ static void editor_run(editor_t *e) {
             }
             break;
         case MotionNotify: {
+            /* пока рисуем рамку или водим мышью без нажатия, важно только
+             * последнее положение: лишние события из очереди выбрасываем */
+            if (e->crop_active || !e->drawing) {
+                XEvent nx;
+                while (XPending(dpy)) {
+                    XPeekEvent(dpy, &nx);
+                    if (nx.type != MotionNotify || nx.xmotion.window != e->win)
+                        break;
+                    XNextEvent(dpy, &ev);
+                }
+            }
             int x = ev.xmotion.x, y = ev.xmotion.y;
+            if (e->crop_anchor && e->cfg.tool == 2) {
+                /* предпросмотр от поставленного угла до курсора */
+                crop_erase(e);
+                int ix = (int)((x - e->ox) / e->scale);
+                int iy = (int)((y - PANEL_H - e->oy) / e->scale);
+                if (ix < 0) ix = 0;
+                if (iy < 0) iy = 0;
+                if (ix > e->iw) ix = e->iw;
+                if (iy > e->ih) iy = e->ih;
+                int rx0 = e->ax < ix ? e->ax : ix;
+                int ry0 = e->ay < iy ? e->ay : iy;
+                int rw = e->ax < ix ? ix - e->ax : e->ax - ix;
+                int rh = e->ay < iy ? iy - e->ay : e->ay - iy;
+                e->crop_px = e->ox + (int)(rx0 * e->scale);
+                e->crop_py = PANEL_H + e->oy + (int)(ry0 * e->scale);
+                e->crop_pw = (int)(rw * e->scale);
+                e->crop_ph = (int)(rh * e->scale);
+                e->crop_drawn = 1;
+                crop_xor(e, e->crop_px, e->crop_py, e->crop_pw, e->crop_ph, 1);
+                XFlush(dpy);
+                break;
+            }
             if (e->crop_active) {
+                crop_erase(e);
                 int ix = (int)((x - e->ox) / e->scale);
                 int iy = (int)((y - PANEL_H - e->oy) / e->scale);
                 if (ix < 0) ix = 0;
@@ -1795,7 +1886,16 @@ static void editor_run(editor_t *e) {
                 if (iy > e->ih) iy = e->ih;
                 e->cx1 = ix;
                 e->cy1 = iy;
-                editor_blit_canvas(e);
+                int rx0 = e->cx0 < e->cx1 ? e->cx0 : e->cx1;
+                int ry0 = e->cy0 < e->cy1 ? e->cy0 : e->cy1;
+                int rw = e->cx0 < e->cx1 ? e->cx1 - e->cx0 : e->cx0 - e->cx1;
+                int rh = e->cy0 < e->cy1 ? e->cy1 - e->cy0 : e->cy0 - e->cy1;
+                e->crop_px = e->ox + (int)(rx0 * e->scale);
+                e->crop_py = PANEL_H + e->oy + (int)(ry0 * e->scale);
+                e->crop_pw = (int)(rw * e->scale);
+                e->crop_ph = (int)(rh * e->scale);
+                e->crop_drawn = 1;
+                crop_xor(e, e->crop_px, e->crop_py, e->crop_pw, e->crop_ph, 1);
                 XFlush(dpy);
                 break;
             }
@@ -1851,6 +1951,10 @@ static void editor_run(editor_t *e) {
                     e->text_active = 0;
                     editor_blit_canvas(e);
                 }
+                if (e->crop_anchor) {
+                    crop_erase(e);
+                    e->crop_anchor = 0;
+                }
                 break;
             }
             if (ev.xbutton.button != Button1)
@@ -1860,13 +1964,7 @@ static void editor_run(editor_t *e) {
                 if (id == B_COPY) {
                     editor_copy(e);
                 } else if (id == B_UNDO) {
-                    if (e->ops.n > 0) {
-                        op_t *op = &e->ops.items[e->ops.n - 1];
-                        free(op->pts);
-                        free(op->text);
-                        e->ops.n--;
-                        editor_blit_canvas(e);
-                    }
+                    editor_undo(e);
                 } else if (id == B_PEN) {
                     editor_set_tool(e, 0);
                 } else if (id == B_TEXT) {
@@ -1895,11 +1993,19 @@ static void editor_run(editor_t *e) {
             if (e->cfg.tool == 2) {
                 int ix = (int)((x - e->ox) / e->scale);
                 int iy = (int)((y - PANEL_H - e->oy) / e->scale);
-                e->cx0 = e->cx1 = ix;
-                e->cy0 = e->cy1 = iy;
+                if (e->crop_anchor) {
+                    /* второй клик: рамка от первого угла до этого */
+                    e->cx0 = e->ax;
+                    e->cy0 = e->ay;
+                    e->crop_anchor = 0;
+                } else {
+                    e->cx0 = ix;
+                    e->cy0 = iy;
+                }
+                e->cx1 = ix;
+                e->cy1 = iy;
                 e->crop_active = 1;
-                editor_blit_canvas(e);
-                XFlush(dpy);
+                e->crop_drawn = 0;
                 break;
             }
             if (e->cfg.tool == 0) {
@@ -1929,7 +2035,18 @@ static void editor_run(editor_t *e) {
             if (ev.xbutton.button != Button1)
                 break;
             if (e->crop_active) {
-                editor_crop_apply(e);
+                int w = e->cx0 < e->cx1 ? e->cx1 - e->cx0 : e->cx0 - e->cx1;
+                int h = e->cy0 < e->cy1 ? e->cy1 - e->cy0 : e->cy0 - e->cy1;
+                if (w < 5 || h < 5) {
+                    /* это был клик, а не протяжка: запоминаем первый угол */
+                    crop_erase(e);
+                    e->crop_active = 0;
+                    e->crop_anchor = 1;
+                    e->ax = e->cx0;
+                    e->ay = e->cy0;
+                } else {
+                    editor_crop_apply(e);
+                }
                 break;
             }
             if (getenv("XSNIP_DEBUG"))
@@ -2010,14 +2127,7 @@ static void editor_run(editor_t *e) {
             XLookupString(&ev.xkey, buf, sizeof(buf), &ks, NULL);
             int ctrl = (ev.xkey.state & ControlMask) != 0;
             if (ctrl && (ks == XK_z || ks == XK_Z)) {
-                if (e->ops.n > 0) {
-                    op_t *op = &e->ops.items[e->ops.n - 1];
-                    free(op->pts);
-                    free(op->text);
-                    e->ops.n--;
-                    editor_blit_canvas(e);
-                    XFlush(dpy);
-                }
+                editor_undo(e);
                 break;
             }
             if (ks == XK_Escape) {
@@ -2060,6 +2170,7 @@ finished:
     }
     img_free(e->view);
     XftDrawDestroy(e->draw);
+    XFreeGC(dpy, e->crop_gc);
     XFreeGC(dpy, e->cgc);
     XFreeCursor(dpy, e->cur_pen);
     XFreeCursor(dpy, e->cur_text);
