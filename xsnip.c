@@ -44,6 +44,7 @@
 #include <X11/extensions/Xinerama.h>
 #include <X11/keysym.h>
 
+#include <fontconfig/fontconfig.h>
 #include <zlib.h>
 
 /* ------------------------------------------------------------------ общее */
@@ -83,6 +84,132 @@ static GC gc;
 static XIM xim;
 static XIC xic_editor;
 
+
+/* ------------------------------------------------------------ локализация */
+
+enum {
+    STR_COPY = 0, STR_UNDO, STR_PEN, STR_TEXT, STR_CROP, STR_DONE,
+    STR_WIDTH, STR_SIZE, STR_FRAME, STR_SHRINK, STR_GROW, STR_INPUT,
+    STR_COLOR, STR_USAGE, STR_COUNT
+};
+
+static const char *LANG_TABLE[3][STR_COUNT] = {
+    /* en — по умолчанию */
+    {
+        "Copy to clipboard",
+        "Undo (Ctrl+Z)",
+        "Pen (p)",
+        "Text (t)",
+        "Crop (r)",
+        "Done (save and close)",
+        "Thickness",
+        "Font size",
+        "Frame",
+        "Thinner",
+        "Thicker",
+        "text: ",
+        "Colour",
+        "usage: xsnip [options]\n"
+        "  -s, --select             select a region with the mouse\n"
+        "  -o, --output FILE        write FILE instead of copying to clipboard\n"
+        "  -d, --delay SEC          wait before the shot\n"
+        "  -a, --all                whole virtual screen (all monitors)\n"
+        "      --colors c1,..,c5    palette (#rrggbb)\n"
+        "      --color N|#rrggbb    active colour\n"
+        "      --pen PCT            pen width, %% of min(w,h) [0.1..5]\n"
+        "      --text PCT           text size, %% of min(w,h) [1..50]\n"
+        "      --window dialog|normal  editor window type\n"
+        "      --pos center|tl|tr|bl|br  editor window position\n"
+        "  -h, --help               this help\n",
+    },
+    /* ru */
+    {
+        "В буфер обмена",
+        "Отменить (Ctrl+Z)",
+        "Перо (p)",
+        "Текст (t)",
+        "Вырезать (r)",
+        "Готово — сохранить и закрыть",
+        "Толщина",
+        "Кегль",
+        "Рамка",
+        "Тоньше",
+        "Толще",
+        "текст: ",
+        "Цвет",
+        "использование: xsnip [опции]\n"
+        "  -s, --select             выбрать область мышью\n"
+        "  -o, --output FILE        сохранить в FILE (иначе — в буфер)\n"
+        "  -d, --delay SEC          задержка перед снимком\n"
+        "  -a, --all                весь виртуальный экран (все мониторы)\n"
+        "      --colors c1,..,c5    палитра (#rrggbb)\n"
+        "      --color N|#rrggbb    активный цвет\n"
+        "      --pen PCT            толщина пера в %% от min(w,h) [0.1..5]\n"
+        "      --text PCT           кегль текста в %% от min(w,h) [1..50]\n"
+        "      --window dialog|normal  тип окна редактора\n"
+        "      --pos center|tl|tr|bl|br  положение окна\n"
+        "  -h, --help               эта справка\n",
+    },
+    /* zh */
+    {
+        "复制到剪贴板",
+        "撤销 (Ctrl+Z)",
+        "画笔 (p)",
+        "文字 (t)",
+        "裁剪 (r)",
+        "完成 (保存并关闭)",
+        "粗细",
+        "字号",
+        "选框",
+        "更细",
+        "更粗",
+        "文字：",
+        "颜色",
+        "用法: xsnip [选项]\n"
+        "  -s, --select             用鼠标选择区域\n"
+        "  -o, --output FILE        保存到 FILE（否则复制到剪贴板）\n"
+        "  -d, --delay SEC          截图前等待\n"
+        "  -a, --all                整个虚拟屏幕（所有显示器）\n"
+        "      --colors c1,..,c5    调色板 (#rrggbb)\n"
+        "      --color N|#rrggbb    当前颜色\n"
+        "      --pen PCT            画笔粗细，min(w,h) 的百分比 [0.1..5]\n"
+        "      --text PCT           文字大小，min(w,h) 的百分比 [1..50]\n"
+        "      --window dialog|normal  编辑器窗口类型\n"
+        "      --pos center|tl|tr|bl|br  编辑器窗口位置\n"
+        "  -h, --help               显示帮助\n",
+    },
+};
+
+static int lang = 0;   /* 0 en, 1 ru, 2 zh */
+static char font_family[128] = "sans";
+
+static const char *t(int id) {
+    if (id < 0 || id >= STR_COUNT)
+        return "";
+    return LANG_TABLE[lang][id];
+}
+
+static void lang_init(void) {
+    const char *env = getenv("XSNIP_LANG");
+    if (!env || !*env)
+        env = getenv("LC_ALL");
+    if (!env || !*env)
+        env = getenv("LC_MESSAGES");
+    if (!env || !*env)
+        env = getenv("LANG");
+    if (!env)
+        return;
+    char lang_part[8] = {0};
+    for (int i = 0; i < 7 && env[i] && env[i] != '_' && env[i] != '.' && env[i] != '-'; i++) {
+        lang_part[i] = (char)((env[i] >= 'A' && env[i] <= 'Z') ? env[i] + 32 : env[i]);
+    }
+    if (!strcmp(lang_part, "ru"))
+        lang = 1;
+    else if (!strcmp(lang_part, "zh"))
+        lang = 2;
+    else
+        lang = 0;
+}
 
 /* ---------------------------------------------------------------- мониторы */
 
@@ -907,31 +1034,83 @@ out:
 
 typedef struct {
     int px;
+    int fam;
     XftFont *font;
 } fontent_t;
 
-static fontent_t fonts[32];
+static fontent_t fonts[96];
 static int nfonts;
 
-static XftFont *font_get(int px) {
+/* порядок подбора: основной для языка, потом универсальные с латиницей и CJK */
+static const char *FAMILIES[4] = {"sans", "DejaVu Sans", "Droid Sans Fallback", "Noto Sans CJK SC"};
+#define NFAM 4
+
+static XftFont *font_for(int px, int fam);
+
+static XftFont *font_for(int px, int fam) {
     if (px < 4)
         px = 4;
+    if (fam < 0 || fam >= NFAM)
+        fam = 0;
     for (int i = 0; i < nfonts; i++)
-        if (fonts[i].px == px)
+        if (fonts[i].px == px && fonts[i].fam == fam)
             return fonts[i].font;
-    char spec[64];
-    snprintf(spec, sizeof(spec), "sans:pixelsize=%d", px);
+    char spec[192];
+    snprintf(spec, sizeof(spec), "%s:pixelsize=%d", FAMILIES[fam], px);
     XftFont *f = XftFontOpenName(dpy, scr, spec);
-    if (!f && px > 8)
+    if (!f) {
+        if (fam != 0)
+            return font_for(px, 0);
         f = XftFontOpenName(dpy, scr, "sans:pixelsize=13");
-    if (!f)
-        die("не нашёл шрифт (fontconfig)");
+        if (!f)
+            die("не нашёл шрифт (fontconfig)");
+    }
     if (nfonts < (int)(sizeof(fonts) / sizeof(fonts[0]))) {
         fonts[nfonts].px = px;
+        fonts[nfonts].fam = fam;
         fonts[nfonts].font = f;
         nfonts++;
     }
     return f;
+}
+
+static XftFont *font_get(int px) {
+    return font_for(px, 0);
+}
+
+/* шрифт, в котором реально есть этот символ */
+static XftFont *font_cp(int px, unsigned int cp) {
+    XftFont *f = font_for(px, 0);
+    if (f && f->charset && FcCharSetHasChar(f->charset, cp))
+        return f;
+    for (int i = 1; i < NFAM; i++) {
+        XftFont *g = font_for(px, i);
+        if (g && g->charset && FcCharSetHasChar(g->charset, cp))
+            return g;
+    }
+    return f;
+}
+
+static int utf8_next(const char *s, unsigned int *cp) {
+    const unsigned char *u = (const unsigned char *)s;
+    if (u[0] < 0x80) { *cp = u[0]; return 1; }
+    if ((u[0] & 0xe0) == 0xc0 && (u[1] & 0xc0) == 0x80) {
+        *cp = ((unsigned)(u[0] & 0x1f) << 6) | (u[1] & 0x3f);
+        return 2;
+    }
+    if ((u[0] & 0xf0) == 0xe0 && (u[1] & 0xc0) == 0x80 && (u[2] & 0xc0) == 0x80) {
+        *cp = ((unsigned)(u[0] & 0x0f) << 12) | ((unsigned)(u[1] & 0x3f) << 6) |
+              (u[2] & 0x3f);
+        return 3;
+    }
+    if ((u[0] & 0xf8) == 0xf0 && (u[1] & 0xc0) == 0x80 && (u[2] & 0xc0) == 0x80 &&
+        (u[3] & 0xc0) == 0x80) {
+        *cp = ((unsigned)(u[0] & 0x07) << 18) | ((unsigned)(u[1] & 0x3f) << 12) |
+              ((unsigned)(u[2] & 0x3f) << 6) | (u[3] & 0x3f);
+        return 4;
+    }
+    *cp = 0xfffd;
+    return 1;
 }
 
 static void xft_color(uint32_t rgb, XftColor *out) {
@@ -944,19 +1123,39 @@ static void xft_color(uint32_t rgb, XftColor *out) {
         memset(out, 0, sizeof(*out));
 }
 
+/* Xft не делает fallback между шрифтами, поэтому рисуем по символу: латиница
+ * из DejaVu, CJK из подходящего шрифта. */
 static void draw_str(XftDraw *draw, uint32_t rgb, int px, int x, int y, const char *s) {
-    XftFont *f = font_get(px);
     XftColor col;
     xft_color(rgb, &col);
-    XftDrawStringUtf8(draw, &col, f, x, y + f->ascent, (const FcChar8 *)s, (int)strlen(s));
+    int cx = x;
+    const char *p = s;
+    while (*p) {
+        unsigned int cp = 0;
+        int len = utf8_next(p, &cp);
+        XftFont *f = font_cp(px, cp);
+        XftDrawStringUtf8(draw, &col, f, cx, y + f->ascent, (const FcChar8 *)p, len);
+        XGlyphInfo ext;
+        XftTextExtentsUtf8(dpy, f, (const FcChar8 *)p, len, &ext);
+        cx += ext.xOff;
+        p += len;
+    }
     XftColorFree(dpy, visual, cmap, &col);
 }
 
 static int str_width(int px, const char *s) {
-    XGlyphInfo ext;
-    XftFont *f = font_get(px);
-    XftTextExtentsUtf8(dpy, f, (const FcChar8 *)s, (int)strlen(s), &ext);
-    return ext.xOff;
+    int w = 0;
+    const char *p = s;
+    while (*p) {
+        unsigned int cp = 0;
+        int len = utf8_next(p, &cp);
+        XftFont *f = font_cp(px, cp);
+        XGlyphInfo ext;
+        XftTextExtentsUtf8(dpy, f, (const FcChar8 *)p, len, &ext);
+        w += ext.xOff;
+        p += len;
+    }
+    return w;
 }
 
 /* ------------------------------------------------------------------- ops */
@@ -1068,6 +1267,14 @@ typedef struct {
 
     XftDraw *draw;
     GC cgc;
+    Window tip_win;
+    GC tip_gc;
+    XftDraw *tip_draw;
+    int tip_btn;       /* кнопка под курсором, для которой ждём подсказку */
+    int tip_shown;
+    long tip_deadline;
+    char tip_text[128];
+
     Cursor cur_pen, cur_text, cur_arrow;
     Window wm_delete;
 } editor_t;
@@ -1198,6 +1405,38 @@ static KeySym base_keysym(XKeyEvent *ev) {
     return ks;
 }
 
+/* Семейство шрифта под текущий язык: у DejaVu нет CJK-глифов, поэтому для
+ * китайского просим у fontconfig шрифт, который умеет 中. */
+static void font_family_init(void) {
+    FcPattern *pat = FcPatternCreate();
+    FcPatternAddString(pat, FC_FAMILY, (const FcChar8 *)"sans");
+    FcCharSet *cs = NULL;
+    if (lang == 2) {
+        cs = FcCharSetCreate();
+        FcCharSetAddChar(cs, 0x4e2d);   /* 中 */
+        FcPatternAddCharSet(pat, FC_CHARSET, cs);
+    } else if (lang == 1) {
+        FcPatternAddString(pat, FC_LANG, (const FcChar8 *)"ru");
+    }
+    FcConfigSubstitute(NULL, pat, FcMatchPattern);
+    FcDefaultSubstitute(pat);
+    FcResult res;
+    FcPattern *m = FcFontMatch(NULL, pat, &res);
+    if (m) {
+        FcChar8 *fam = NULL;
+        if (FcPatternGetString(m, FC_FAMILY, 0, &fam) == FcResultMatch && fam)
+            snprintf(font_family, sizeof(font_family), "%s", (const char *)fam);
+        FcPatternDestroy(m);
+    }
+    FcPatternDestroy(pat);
+    if (cs)
+        FcCharSetDestroy(cs);
+    if (font_family[0])
+        FAMILIES[0] = font_family;
+    if (getenv("XSNIP_DEBUG"))
+        fprintf(stderr, "шрифт: %s (язык %d)\n", FAMILIES[0], lang);
+}
+
 /* --- иконки: рисуем примитивами, никаких картинок и зависимостей */
 
 enum { ICON_NONE = 0, ICON_UNDO, ICON_COPY, ICON_CHECK, ICON_PEN, ICON_TEXT, ICON_CROP };
@@ -1213,11 +1452,15 @@ static void draw_icon(editor_t *e, Drawable d, int icon, int cx, int cy, int sz,
     int lw = sz - 6;
     switch (icon) {
     case ICON_UNDO: {
+        /* дуга против часовой: разрыв справа, стрелка на верхнем конце
+         * смотрит влево — классический значок отмены */
         icon_stroke(e, col, 2);
-        XDrawArc(dpy, d, e->cgc, cx - r + 1, cy - r + 1, 2 * r - 2, 2 * r - 2,
-                 40 * 64, 260 * 64);
-        int hx = cx - r + 2, hy = cy - r + 3;
-        XPoint head[3] = {{hx - 2, hy}, {hx + 5, hy - 3}, {hx + 5, hy + 4}};
+        int rr = r - 1;
+        XDrawArc(dpy, d, e->cgc, cx - rr, cy - rr, 2 * rr, 2 * rr, 50 * 64, 280 * 64);
+        /* cos(50°)=0.643, sin(50°)=0.766 — без libm */
+        int px = cx + (int)(rr * 0.643 + 0.5);
+        int py = cy - (int)(rr * 0.766 + 0.5);
+        XPoint head[3] = {{px - 6, py - 1}, {px + 1, py - 5}, {px + 1, py + 4}};
         XSetForeground(dpy, e->cgc, col);
         XFillPolygon(dpy, d, e->cgc, head, 3, Convex, CoordModeOrigin);
         break;
@@ -1326,7 +1569,7 @@ static void editor_relayout(editor_t *e) {
     x += 6;
 
     x = ui_button(e, B_SHRINK, x, y, 26, h);
-    int wlab = str_width(13, "толщина 10.5% ") + 10;
+    int wlab = str_width(13, "Very wide label 00.0% ") + 10;
     x += 4 + wlab + 4;
     x = ui_button(e, B_GROW, x, y, 26, h);
 
@@ -1406,11 +1649,11 @@ static void editor_paint(editor_t *e) {
     }
     char lbl[64];
     if (e->cfg.tool == 2)
-        snprintf(lbl, sizeof(lbl), "рамка");
+        snprintf(lbl, sizeof(lbl), "%s", t(STR_FRAME));
     else if (e->cfg.tool == 1)
-        snprintf(lbl, sizeof(lbl), "кегль %.1f%%", e->cfg.txt);
+        snprintf(lbl, sizeof(lbl), "%s %.1f%%", t(STR_SIZE), e->cfg.txt);
     else
-        snprintf(lbl, sizeof(lbl), "толщина %.1f%%", e->cfg.pen);
+        snprintf(lbl, sizeof(lbl), "%s %.1f%%", t(STR_WIDTH), e->cfg.pen);
     int tw = str_width(13, lbl);
     draw_str(e->draw, 0x202020, 13, lab_x + (lab_w - tw) / 2,
              (PANEL_H - font_get(13)->ascent - font_get(13)->descent) / 2, lbl);
@@ -1428,13 +1671,13 @@ static void editor_paint(editor_t *e) {
             editor_draw_button(e, b, ICON_CHECK, NULL, 0, 1);
             break;
         case B_PEN:
-            editor_draw_button(e, b, ICON_PEN, "перо", e->cfg.tool == 0, 1);
+            editor_draw_button(e, b, ICON_PEN, t(STR_PEN), e->cfg.tool == 0, 1);
             break;
         case B_TEXT:
-            editor_draw_button(e, b, ICON_TEXT, "текст", e->cfg.tool == 1, 1);
+            editor_draw_button(e, b, ICON_TEXT, t(STR_TEXT), e->cfg.tool == 1, 1);
             break;
         case B_CROP:
-            editor_draw_button(e, b, ICON_CROP, "вырезать", e->cfg.tool == 2, 1);
+            editor_draw_button(e, b, ICON_CROP, t(STR_CROP), e->cfg.tool == 2, 1);
             break;
         case B_SHRINK:
             editor_draw_button(e, b, ICON_NONE, "−", 0, 1);
@@ -1480,6 +1723,100 @@ static void crop_erase(editor_t *e) {
     e->crop_drawn = 0;
 }
 
+static long now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long)ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
+}
+
+/* что показать при наведении на кнопку; NULL — ничего */
+static const char *tip_for(editor_t *e, int id, char *buf, size_t n) {
+    switch (id) {
+    case B_UNDO:
+        return t(STR_UNDO);
+    case B_COPY:
+        return t(STR_COPY);
+    case B_DONE:
+        return t(STR_DONE);
+    case B_PEN:
+        return t(STR_PEN);
+    case B_TEXT:
+        return t(STR_TEXT);
+    case B_CROP:
+        return t(STR_CROP);
+    case B_SHRINK:
+        return t(STR_SHRINK);
+    case B_GROW:
+        return t(STR_GROW);
+    default:
+        if (id >= B_COLOR0 && id < B_COLOR0 + NCOLORS) {
+            snprintf(buf, n, "%s %d", t(STR_COLOR), id - B_COLOR0 + 1);
+            return buf;
+        }
+        return NULL;
+    }
+    (void)e;
+}
+
+static void tip_hide(editor_t *e) {
+    if (e->tip_shown && e->tip_win) {
+        XUnmapWindow(dpy, e->tip_win);
+        e->tip_shown = 0;
+    }
+}
+
+static void tip_paint(editor_t *e) {
+    if (!e->tip_win)
+        return;
+    int px = 12;
+    int w = str_width(px, e->tip_text) + 16;
+    int h = font_get(px)->ascent + font_get(px)->descent + 10;
+    XSetForeground(dpy, e->tip_gc, 0xffffe1);
+    XFillRectangle(dpy, e->tip_win, e->tip_gc, 0, 0, (unsigned)w, (unsigned)h);
+    XSetForeground(dpy, e->tip_gc, 0x606060);
+    XDrawRectangle(dpy, e->tip_win, e->tip_gc, 0, 0, (unsigned)(w - 1), (unsigned)(h - 1));
+    draw_str(e->tip_draw, 0x101010, px, 8, 4, e->tip_text);
+}
+
+static void tip_show(editor_t *e) {
+    char buf[64];
+    const char *txt = tip_for(e, e->tip_btn, buf, sizeof(buf));
+    if (!txt)
+        return;
+    int px = 12;
+    int w = str_width(px, txt) + 16;
+    int h = font_get(px)->ascent + font_get(px)->descent + 10;
+    int x = 8, y = PANEL_H + 4;
+    for (int i = 0; i < e->nbtn; i++) {
+        if (e->btns[i].id == e->tip_btn) {
+            x = e->btns[i].x;
+            if (x + w > e->cw - 4)
+                x = e->cw - w - 4;
+            break;
+        }
+    }
+    if (!e->tip_win) {
+        XSetWindowAttributes a;
+        a.override_redirect = True;
+        a.background_pixel = 0xffffe1;
+        e->tip_win = XCreateWindow(dpy, root, x, y, w, h, 1, CopyFromParent, InputOutput,
+                                   CopyFromParent,
+                                   CWOverrideRedirect | CWBackPixel, &a);
+        e->tip_gc = XCreateGC(dpy, e->tip_win, 0, NULL);
+        e->tip_draw = XftDrawCreate(dpy, e->tip_win, visual, cmap);
+        XStoreName(dpy, e->tip_win, "xsnip-tip");
+    }
+    Window child;
+    int wx = 0, wy = 0;
+    XTranslateCoordinates(dpy, e->win, root, x, y, &wx, &wy, &child);
+    XMoveResizeWindow(dpy, e->tip_win, wx, wy, (unsigned)w, (unsigned)h);
+    snprintf(e->tip_text, sizeof(e->tip_text), "%s", txt);
+    XMapRaised(dpy, e->tip_win);
+    e->tip_shown = 1;
+    tip_paint(e);
+    XFlush(dpy);
+}
+
 /* высота строки ввода: от самого высокого монитора, а не от картинки —
  * иначе на маленьком экране редактор получается нечитаемо мелким */
 static int input_font_px(void) {
@@ -1498,7 +1835,7 @@ static void editor_blit_canvas(editor_t *e) {
     editor_draw_ops(e, e->win, e->draw, 1);
     if (e->text_active) {
         char line[TEXT_MAX + 32];
-        snprintf(line, sizeof(line), "текст: %s_", e->textbuf);
+        snprintf(line, sizeof(line), "%s%s_", t(STR_INPUT), e->textbuf);
         int px = input_font_px();
         int w = str_width(px, line) + 20;
         int h = font_get(px)->ascent + font_get(px)->descent + 12;
@@ -1892,9 +2229,33 @@ static void editor_run(editor_t *e) {
 
     for (;;) {
         XEvent ev;
+        if (!XPending(dpy)) {
+            int fd = XConnectionNumber(dpy);
+            fd_set fds;
+            FD_ZERO(&fds);
+            FD_SET(fd, &fds);
+            long wait = 1000;
+            if (e->tip_btn && !e->tip_shown) {
+                long left = e->tip_deadline - now_ms();
+                wait = left > 0 ? left : 0;
+            }
+            struct timeval tv;
+            tv.tv_sec = wait / 1000;
+            tv.tv_usec = (wait % 1000) * 1000;
+            if (select(fd + 1, &fds, NULL, NULL, &tv) == 0) {
+                if (e->tip_btn && !e->tip_shown && now_ms() >= e->tip_deadline)
+                    tip_show(e);
+                continue;
+            }
+        }
         XNextEvent(dpy, &ev);
         switch (ev.type) {
         case Expose:
+            if (ev.xexpose.window == e->tip_win) {
+                if (ev.xexpose.count == 0)
+                    tip_paint(e);
+                break;
+            }
             if (ev.xexpose.window == e->win && ev.xexpose.count == 0) {
                 editor_repaint(e);
                 editor_focus(e);
@@ -2008,12 +2369,19 @@ static void editor_run(editor_t *e) {
                     editor_paint(e);
                     XFlush(dpy);
                 }
+                if (hit != e->tip_btn) {
+                    tip_hide(e);
+                    e->tip_btn = (y < PANEL_H) ? hit : 0;
+                    e->tip_deadline = now_ms() + 700;
+                }
             }
             break;
         }
         case ButtonPress: {
             int x = ev.xbutton.x, y = ev.xbutton.y;
             editor_focus(e);
+            tip_hide(e);
+            e->tip_btn = 0;
             if (ev.xbutton.button == Button4 || ev.xbutton.button == Button5) {
                 editor_adjust(e, ev.xbutton.button == Button4 ? 1 : -1);
                 break;
@@ -2244,6 +2612,13 @@ finished:
         e->view_xi = NULL;
     }
     img_free(e->view);
+    tip_hide(e);
+    if (e->tip_win) {
+        XftDrawDestroy(e->tip_draw);
+        XFreeGC(dpy, e->tip_gc);
+        XDestroyWindow(dpy, e->tip_win);
+        e->tip_win = 0;
+    }
     XftDrawDestroy(e->draw);
     XFreeGC(dpy, e->crop_gc);
     XFreeGC(dpy, e->cgc);
@@ -2258,23 +2633,13 @@ finished:
 /* -------------------------------------------------------------------- CLI */
 
 static void usage(FILE *f) {
-    fprintf(f,
-            "использование: xsnip [опции]\n"
-            "  -s, --select             выбрать область мышью\n"
-            "  -a, --all                весь виртуальный экран (все мониторы)\n"
-            "  -o, --output FILE        сохранить в FILE (иначе — в буфер)\n"
-            "  -d, --delay SEC          задержка перед снимком\n"
-            "      --colors c1,c2,c3,c4,c5  палитра (#rrggbb)\n"
-            "      --color N|#rrggbb    активный цвет\n"
-            "      --pen PCT            толщина пера в %% от min(w,h) [0.1..5]\n"
-            "      --text PCT           кегль текста в %% от min(w,h) [1..50]\n"
-            "      --window dialog|normal  тип окна редактора\n"
-            "      --pos center|tl|tr|bl|br  положение окна\n"
-            "  -h, --help               эта справка\n");
+    fputs(t(STR_USAGE), f);
 }
 
 int main(int argc, char **argv) {
     setlocale(LC_ALL, "");
+    lang_init();
+    font_family_init();
 
     cfg_t cfg;
     cfg_defaults(&cfg);

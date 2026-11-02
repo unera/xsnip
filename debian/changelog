@@ -1,3 +1,17 @@
+xsnip (2.8-1) unstable; urgency=medium
+
+  * Tooltips: after 0.7 s of hovering over a button a small hint appears with
+    its name (own override-redirect window, the image is not repainted).
+  * Localisation without gettext: English (default), Russian and Chinese for
+    the toolbar, tooltips and --help. The language comes from XSNIP_LANG,
+    LC_ALL, LC_MESSAGES or LANG.
+  * Fonts are chosen through fontconfig for the language, and text is drawn
+    per character with fallback, so Chinese renders even though the default
+    font has no CJK glyphs.
+  * The undo icon is now a counter-clockwise arrow, as usual for undo.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Mon, 02 Nov 2026 22:30:00 +0300
+
 xsnip (2.7-1) unstable; urgency=medium
 
   * Keyboard shortcuts no longer depend on the keyboard layout: they are
