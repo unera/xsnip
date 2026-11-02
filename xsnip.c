@@ -38,6 +38,7 @@
 #include <X11/Xatom.h>
 #include <X11/Xft/Xft.h>
 #include <X11/Xlib.h>
+#include <X11/XKBlib.h>
 #include <X11/Xutil.h>
 #include <X11/cursorfont.h>
 #include <X11/extensions/Xinerama.h>
@@ -1183,6 +1184,20 @@ static void editor_draw_ops(editor_t *e, Drawable d, XftDraw *xd, int to_window)
     }
 }
 
+/*
+ * Клавиша, не зависящая от раскладки: берём keysym нулевой группы (US), то
+ * есть по физической клавише. На русской раскладке та же клавиша отдаёт
+ * Cyrillic_pe вместо p, и шорткаты перестают работать.
+ */
+static KeySym base_keysym(XKeyEvent *ev) {
+    KeySym ks = XkbKeycodeToKeysym(dpy, (KeyCode)ev->keycode, 0, 0);
+    if (ks == NoSymbol)
+        return NoSymbol;
+    if (ks >= XK_A && ks <= XK_Z)
+        ks = ks + (XK_a - XK_A);
+    return ks;
+}
+
 /* --- иконки: рисуем примитивами, никаких картинок и зависимостей */
 
 enum { ICON_NONE = 0, ICON_UNDO, ICON_COPY, ICON_CHECK, ICON_PEN, ICON_TEXT, ICON_CROP };
@@ -2182,8 +2197,11 @@ static void editor_run(editor_t *e) {
                 break;
             }
             XLookupString(&ev.xkey, buf, sizeof(buf), &ks, NULL);
+            KeySym bk = base_keysym(&ev.xkey);   /* не зависит от раскладки */
+            if (bk == NoSymbol)
+                bk = ks;
             int ctrl = (ev.xkey.state & ControlMask) != 0;
-            if (ctrl && (ks == XK_z || ks == XK_Z)) {
+            if (ctrl && (bk == XK_z || ks == XK_z)) {
                 editor_undo(e);
                 break;
             }
@@ -2191,15 +2209,15 @@ static void editor_run(editor_t *e) {
                 e->done = 1;
                 goto finished;
             }
-            if (ks == XK_1 || ks == XK_p) {
+            if (bk == XK_1 || bk == XK_p) {
                 editor_set_tool(e, 0);
-            } else if (ks == XK_2 || ks == XK_t) {
+            } else if (bk == XK_2 || bk == XK_t) {
                 editor_set_tool(e, 1);
-            } else if (ks == XK_3 || ks == XK_r) {
+            } else if (bk == XK_3 || bk == XK_r) {
                 editor_set_tool(e, 2);
-            } else if (ks >= XK_4 && ks < XK_4 + NCOLORS) {
+            } else if (bk >= XK_4 && bk < XK_4 + NCOLORS) {
                 uint32_t c;
-                if (parse_color(e->cfg.colors[ks - XK_4], &c)) {
+                if (parse_color(e->cfg.colors[bk - XK_4], &c)) {
                     e->cfg.color = c;
                     cfg_save(&e->cfg);
                     editor_paint(e);

@@ -1,3 +1,12 @@
+xsnip (2.7-1) unstable; urgency=medium
+
+  * Keyboard shortcuts no longer depend on the keyboard layout: they are
+    matched by physical key (keysym of group 0), so p/t/r and Ctrl+Z work on
+    a Russian layout too, where the same keys produce Cyrillic_pe and
+    Cyrillic_ya. Text input through XIM is untouched.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Mon, 02 Nov 2026 21:45:00 +0300
+
 xsnip (2.6-1) unstable; urgency=medium
 
   * The text input field is now sized from the tallest monitor: its font is
