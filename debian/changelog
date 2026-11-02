@@ -21,6 +21,8 @@ xsnip (3.1-1) unstable; urgency=medium
   * Cleanups: dead globals and atoms removed, XUnloadFont, correct version in
     --version and in the man page, Homepage/Source point at GitHub.
 
+ -- Dmitry Oboukhov <unera@debian.org>  Tue, 03 Nov 2026 00:40:00 +0300
+
 xsnip (3.0-1) unstable; urgency=medium
 
   * Resizing the editor window is fast now: while the size keeps changing only
