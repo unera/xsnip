@@ -91,6 +91,9 @@ typedef struct {
 
 static mon_t mons[16];
 static int nmons;
+static int max_mon_h = 600;   /* самая большая высота среди мониторов */
+
+static int input_font_px(void);
 
 static void monitors_init(void) {
     nmons = 0;
@@ -117,10 +120,15 @@ static void monitors_init(void) {
         mons[0].h = wa.height;
         nmons = 1;
     }
+    max_mon_h = 0;
+    for (int i = 0; i < nmons; i++)
+        if (mons[i].h > max_mon_h)
+            max_mon_h = mons[i].h;
     if (getenv("XSNIP_DEBUG")) {
         for (int i = 0; i < nmons; i++)
             fprintf(stderr, "monitor %d: %dx%d+%d+%d\n", i, mons[i].w, mons[i].h,
                     mons[i].x, mons[i].y);
+        fprintf(stderr, "поле ввода: %d px (высота %d / 25)\n", input_font_px(), max_mon_h);
     }
 }
 
@@ -1457,6 +1465,17 @@ static void crop_erase(editor_t *e) {
     e->crop_drawn = 0;
 }
 
+/* высота строки ввода: от самого высокого монитора, а не от картинки —
+ * иначе на маленьком экране редактор получается нечитаемо мелким */
+static int input_font_px(void) {
+    int px = max_mon_h / 25;
+    if (px < 10)
+        px = 10;
+    if (px > 96)
+        px = 96;
+    return px;
+}
+
 static void editor_blit_canvas(editor_t *e) {
     if (!e->view_xi)
         return;
@@ -1465,7 +1484,7 @@ static void editor_blit_canvas(editor_t *e) {
     if (e->text_active) {
         char line[TEXT_MAX + 32];
         snprintf(line, sizeof(line), "текст: %s_", e->textbuf);
-        int px = 14;
+        int px = input_font_px();
         int w = str_width(px, line) + 20;
         int h = font_get(px)->ascent + font_get(px)->descent + 12;
         int x = 12, y = PANEL_H + e->ch - h - 12;

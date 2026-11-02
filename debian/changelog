@@ -1,3 +1,13 @@
+xsnip (2.6-1) unstable; urgency=medium
+
+  * The text input field is now sized from the tallest monitor: its font is
+    monitor height / 25 (48 px on a 1200-pixel screen) instead of a fixed
+    14 px. On a small screen the field used to be unreadable while the
+    resulting text was fine; the size of text placed on the image is
+    unchanged.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Mon, 02 Nov 2026 21:10:00 +0300
+
 xsnip (2.5-1) unstable; urgency=medium
 
   * Tool shortcuts are now letters: p (pen), t (text), r (crop); the digit
