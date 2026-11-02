@@ -22,6 +22,19 @@ make
 sudo make install          # или: install -m 755 xsnip ~/bin/xsnip
 ```
 
+## Установка из репозитория vds2
+
+Готовый пакет собран и лежит в `https://vds2.uvw.ru/debian` (trixie и sid):
+
+```bash
+curl -fsSL https://vds2.uvw.ru/debian/repo-key.gpg \
+  | sudo tee /etc/apt/keyrings/vds2-repo.asc > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/vds2-repo.asc] \
+  https://vds2.uvw.ru/debian trixie main" \
+  | sudo tee /etc/apt/sources.list.d/vds2.list
+sudo apt update && sudo apt install xsnip
+```
+
 ## Использование
 
 ```
@@ -107,7 +120,9 @@ X11-приложениях. Картинка вписывается в окно 
 
 - `xsnip.c` — вся программа
 - `Makefile` — сборка через pkg-config
-- `legacy/xsnip.py` — первая версия на Python+GTK3 (оставлена для истории)
+- `debian/` — упаковка (non-native, 3.0 quilt)
+- `man/xsnip.1` — man-страница
+- `legacy/shot.py` — первая версия на Python+GTK3 (оставлена для истории)
 - `test/` — e2e-прогоны под Xvfb + xdotool, включая проверку на настоящем i3:
 
 ```bash

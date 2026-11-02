@@ -1,0 +1,13 @@
+xsnip (2.0-1) unstable; urgency=medium
+
+  * Initial release.
+  * Screenshot of the whole screen or a mouse-selected region.
+  * Minimal editor: pen and text, sizes in percent of min(width, height).
+  * Five-colour palette, configurable via --colors and chosen with --color.
+  * Settings (colour, sizes, tool, window type and position) persist in
+    $XDG_CONFIG_HOME/xsnip/config.
+  * --window dialog|normal and --pos center|tl|tr|bl|br for tiling WMs.
+  * Clipboard is served by a forked X11 selection owner (PNG, INCR for
+    large images), so the data survives the process exit.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Mon, 02 Nov 2026 17:00:00 +0300

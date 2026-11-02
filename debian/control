@@ -1,0 +1,29 @@
+Source: xsnip
+Section: graphics
+Priority: optional
+Maintainer: Dmitry Oboukhov <unera@debian.org>
+Build-Depends: debhelper-compat (= 13),
+               pkgconf,
+               libx11-dev,
+               libxft-dev,
+               libfontconfig-dev,
+               zlib1g-dev
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Homepage: https://vds2.uvw.ru/debian
+
+Package: xsnip
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: screenshot tool with a minimal markup editor (X11)
+ xsnip grabs the whole screen or a mouse-selected region and opens a small
+ editor window on top of it: a pen and a text tool, five colours, and sizes
+ expressed as a percentage of the smaller image side, so a stroke looks the
+ same on 800x600 and on 4K.
+ .
+ Clicking "done" copies the result to the clipboard (served by a forked X11
+ selection owner, so it survives the process) or writes it to a PNG file.
+ Window type and position can be chosen for tiling window managers: the
+ dialog type stays floating in i3 and honours the requested corner.
+ .
+ Built directly on Xlib and Xft, with no toolkit dependency.
