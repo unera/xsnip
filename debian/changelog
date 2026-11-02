@@ -6,6 +6,8 @@ xsnip (3.2-1) unstable; urgency=medium
   * The Russian and English pages document the clipboard helper (the forked
     process that owns the X11 selection) and the language selection.
 
+ -- Dmitry Oboukhov <unera@debian.org>  Tue, 03 Nov 2026 01:30:00 +0300
+
 xsnip (3.1-1) unstable; urgency=medium
 
   * Security: no more system("mkdir -p ...") built from XDG_CONFIG_HOME —
