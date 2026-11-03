@@ -2744,6 +2744,13 @@ static void editor_run(editor_t *e) {
                 e->done = 1;
                 goto finished;
             }
+            if (ks == XK_Return || ks == XK_KP_Enter) {
+                /* Enter вне ввода текста — это кнопка «готово» */
+                editor_done(e);
+                if (e->done)
+                    goto finished;
+                break;
+            }
             if (bk == XK_1 || bk == XK_p) {
                 editor_set_tool(e, 0);
             } else if (bk == XK_2 || bk == XK_t) {

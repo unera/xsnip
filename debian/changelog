@@ -1,3 +1,10 @@
+xsnip (3.3-1) unstable; urgency=medium
+
+  * Enter outside text input now acts as the "done" button; while text is
+    being typed it still places the text.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Tue, 03 Nov 2026 02:10:00 +0300
+
 xsnip (3.2-1) unstable; urgency=medium
 
   * Manual pages in three languages: the English xsnip.1 is now the main page,
