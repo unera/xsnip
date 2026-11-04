@@ -1,3 +1,13 @@
+xsnip (3.8-1) unstable; urgency=medium
+
+  * Clipboard log shows target names instead of raw atom numbers and says
+    explicitly when a requested target is refused.
+  * STRING is no longer advertised in TARGETS: there is no text form of the
+    image, and a client that tries text first gave up instead of asking for
+    image/png.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Tue, 04 Nov 2026 15:10:00 +0300
+
 xsnip (3.7-1) unstable; urgency=medium
 
   * Clipboard diagnostics: xsnip now always appends what happens with the

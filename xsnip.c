@@ -49,7 +49,7 @@
 
 /* ------------------------------------------------------------------ общее */
 
-#define XSNIP_VERSION "3.7"
+#define XSNIP_VERSION "3.8"
 #define NCOLORS 5
 /* Панель и всё, что её составляет, масштабируется от самого высокого монитора:
  * за базу взято 800 px по высоте (как было раньше), дальше линейно. */
@@ -839,12 +839,18 @@ static void clipboard_daemon(unsigned char *data, size_t len) {
         case SelectionRequest: {
             XSelectionRequestEvent *rq = &ev.xselectionrequest;
             Atom prop = rq->property ? rq->property : rq->target;
-            clip_logf("запрос target=0x%lx от окна 0x%lx", (unsigned long)rq->target,
-                      (unsigned long)rq->requestor);
+            {
+                char *tn = XGetAtomName(dpy, rq->target);
+                clip_logf("запрос target=%s (0x%lx) от окна 0x%lx",
+                          tn ? tn : "?", (unsigned long)rq->target,
+                          (unsigned long)rq->requestor);
+                if (tn)
+                    XFree(tn);
+            }
             if (rq->target == A_TARGETS) {
-                Atom list[4] = {A_TARGETS, A_PNG_IMAGE, A_PNG_UPPER, XA_STRING};
+                Atom list[3] = {A_TARGETS, A_PNG_IMAGE, A_PNG_UPPER};
                 XChangeProperty(dpy, rq->requestor, prop, XA_ATOM, 32, PropModeReplace,
-                                (unsigned char *)list, 4);
+                                (unsigned char *)list, 3);
                 notify(rq->requestor, prop, rq->target, rq->time);
             } else if (rq->target == A_PNG_IMAGE || rq->target == A_PNG_UPPER) {
                 if (len <= max_prop_bytes()) {
@@ -882,6 +888,7 @@ static void clipboard_daemon(unsigned char *data, size_t len) {
                     incs[slot].deadline = now_ms() + 30000;
                 }
             } else {
+                clip_logf("target не поддерживаю — отказываю");
                 notify(rq->requestor, None, rq->target, rq->time);
             }
             break;
