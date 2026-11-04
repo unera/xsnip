@@ -1,3 +1,7 @@
+xsnip (3.9-2) unstable; urgency=medium
+
+  * Rebuild: the 3.9-1 changelog entry had the wrong weekday.
+
 xsnip (3.9-1) unstable; urgency=medium
 
   * Root cause of the empty clipboard after Esc: TARGETS advertised STRING, so
