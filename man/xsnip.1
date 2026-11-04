@@ -1,5 +1,5 @@
 .\" xsnip — screenshot tool with a minimal markup editor
-.TH XSNIP 1 "2026-11-02" "xsnip 3.1" "User Commands"
+.TH XSNIP 1 "2026-11-02" "xsnip 3.4" "User Commands"
 .SH NAME
 xsnip \- take a screenshot of the screen or a region and mark it up
 .SH SYNOPSIS
@@ -26,8 +26,12 @@ xsnip \- take a screenshot of the screen or a region and mark it up
 .B xsnip
 grabs the screen (or a rectangle selected with the mouse), opens a small
 window with the image and a minimal set of tools: a pen and a text tool.
-Clicking the checkmark button sends the result to the clipboard or writes it
-to a file.
+Everything that is on the editor canvas is already in the clipboard: it is
+refreshed after every change (a stroke, a text, a crop, an undo) and right
+after the region is selected, so nothing has to be pressed. The checkmark
+closes the window (and writes the file when
+.B \-o
+was given); Esc just closes it and never touches the clipboard.
 .SH OPTIONS
 .TP
 .B \-s, \-\-select
@@ -132,8 +136,8 @@ Saved settings (usually
 the active colour, the tool sizes, the window type and position. Command line
 arguments win over the saved values. Removing the file restores the defaults.
 .SH CLIPBOARD
-After the editor closes, the picture in the clipboard is held by a forked
-process of
+The clipboard is always up to date while the editor is open. After it closes,
+the picture is held by a forked process of
 .B xsnip
 that owns the X11 selection and answers requests for
 .BR image/png

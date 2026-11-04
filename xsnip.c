@@ -49,7 +49,7 @@
 
 /* ------------------------------------------------------------------ общее */
 
-#define XSNIP_VERSION "3.1"
+#define XSNIP_VERSION "3.4"
 #define NCOLORS 5
 /* Панель и всё, что её составляет, масштабируется от самого высокого монитора:
  * за базу взято 800 px по высоте (как было раньше), дальше линейно. */
@@ -110,7 +110,7 @@ static XIC xic_editor;
 /* ------------------------------------------------------------ локализация */
 
 enum {
-    STR_COPY = 0, STR_UNDO, STR_PEN, STR_TEXT, STR_CROP, STR_DONE,
+    STR_UNDO = 0, STR_PEN, STR_TEXT, STR_CROP, STR_DONE,
     STR_WIDTH, STR_SIZE, STR_FRAME, STR_SHRINK, STR_GROW, STR_INPUT,
     STR_COLOR, STR_USAGE, STR_COUNT
 };
@@ -118,7 +118,6 @@ enum {
 static const char *LANG_TABLE[3][STR_COUNT] = {
     /* en — по умолчанию */
     {
-        "Copy to clipboard",
         "Undo (Ctrl+Z)",
         "Pen",
         "Text",
@@ -146,7 +145,6 @@ static const char *LANG_TABLE[3][STR_COUNT] = {
     },
     /* ru */
     {
-        "В буфер обмена",
         "Отменить (Ctrl+Z)",
         "Перо",
         "Текст",
@@ -174,7 +172,6 @@ static const char *LANG_TABLE[3][STR_COUNT] = {
     },
     /* zh */
     {
-        "复制到剪贴板",
         "撤销 (Ctrl+Z)",
         "画笔",
         "文字",
@@ -399,6 +396,29 @@ static img_t *img_crop(const img_t *src, int x, int y, int w, int h) {
     for (int r = 0; r < h; r++)
         memcpy(im->px + (size_t)r * w, src->px + (size_t)(y + r) * src->w + x,
                (size_t)w * sizeof(uint32_t));
+    return im;
+}
+
+/* XGetPixel в цикле — это десятки миллионов вызовов на 4K, поэтому для
+ * обычного TrueColor 32bpp читаем память напрямую */
+static img_t *ximage_to_img(XImage *xi, int w, int h) {
+    img_t *im = img_new(w, h);
+    int fast = (xi->bits_per_pixel == 32 && xi->byte_order == LSBFirst &&
+                visual->red_mask == 0xff0000 && visual->green_mask == 0xff00 &&
+                visual->blue_mask == 0xff);
+    if (fast) {
+        for (int y = 0; y < h; y++) {
+            uint32_t *src = (uint32_t *)(xi->data + (size_t)y * xi->bytes_per_line);
+            uint32_t *dst = im->px + (size_t)y * w;
+            for (int x = 0; x < w; x++)
+                dst[x] = src[x] & 0xffffffu;
+        }
+    } else {
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                im->px[(size_t)y * w + x] = pixel_from_ximage(xi, x, y);
+    }
+    XDestroyImage(xi);
     return im;
 }
 
@@ -636,7 +656,7 @@ static void png_chunk(buf_t *b, const char *type, const unsigned char *data, siz
     buf_add(b, tail, 4);
 }
 
-static int png_encode(const img_t *im, unsigned char **out, size_t *outlen) {
+static int png_encode(const img_t *im, unsigned char **out, size_t *outlen, int level) {
     size_t rawlen = (size_t)im->h * (1 + (size_t)im->w * 3);
     unsigned char *raw = malloc(rawlen);
     if (!raw)
@@ -658,7 +678,7 @@ static int png_encode(const img_t *im, unsigned char **out, size_t *outlen) {
         free(raw);
         return -1;
     }
-    if (compress2(zdata, &zlen, raw, rawlen, 6) != Z_OK) {
+    if (compress2(zdata, &zlen, raw, rawlen, level) != Z_OK) {
         free(raw);
         free(zdata);
         return -1;
@@ -690,7 +710,7 @@ static int png_encode(const img_t *im, unsigned char **out, size_t *outlen) {
 static int png_write_file(const img_t *im, const char *path) {
     unsigned char *data;
     size_t len;
-    if (png_encode(im, &data, &len) != 0) {
+    if (png_encode(im, &data, &len, 6) != 0) {
         fprintf(stderr, "xsnip: не смог собрать PNG\n");
         return -1;
     }
@@ -1337,8 +1357,7 @@ static void ops_free(ops_t *o) {
 /* ---------------------------------------------------------------- редактор */
 
 enum {
-    B_COPY = 1,
-    B_UNDO,
+    B_UNDO = 1,
     B_PEN,
     B_TEXT,
     B_CROP,
@@ -1387,6 +1406,9 @@ typedef struct {
 
     int resize_pending;    /* размер изменился, кэш ещё не пересобран */
     long resize_deadline;
+
+    int clip_dirty;        /* в буфере устаревшая картинка */
+    long clip_deadline;
     int crop_px, crop_py, crop_pw, crop_ph;   /* прошлая рамка в координатах окна */
 
     int text_active;
@@ -1572,7 +1594,7 @@ static void font_family_init(void) {
 
 /* --- иконки: рисуем примитивами, никаких картинок и зависимостей */
 
-enum { ICON_NONE = 0, ICON_UNDO, ICON_COPY, ICON_CHECK, ICON_PEN, ICON_TEXT, ICON_CROP };
+enum { ICON_NONE = 0, ICON_UNDO, ICON_CHECK, ICON_PEN, ICON_TEXT, ICON_CROP };
 
 static void icon_stroke(editor_t *e, uint32_t col, int w) {
     XSetForeground(dpy, e->cgc, col);
@@ -1582,7 +1604,6 @@ static void icon_stroke(editor_t *e, uint32_t col, int w) {
 static void draw_icon(editor_t *e, Drawable d, int icon, int cx, int cy, int sz,
                       uint32_t col) {
     int r = sz / 2;
-    int lw = sz - 6;
     switch (icon) {
     case ICON_UNDO: {
         /* дуга против часовой: разрыв справа, стрелка на верхнем конце
@@ -1596,16 +1617,6 @@ static void draw_icon(editor_t *e, Drawable d, int icon, int cx, int cy, int sz,
         XPoint head[3] = {{px - 6, py - 1}, {px + 1, py - 5}, {px + 1, py + 4}};
         XSetForeground(dpy, e->cgc, col);
         XFillPolygon(dpy, d, e->cgc, head, 3, Convex, CoordModeOrigin);
-        break;
-    }
-    case ICON_COPY: {
-        /* задний лист — только уголок справа сверху, передний — контуром */
-        icon_stroke(e, col, 1);
-        XDrawRectangle(dpy, d, e->cgc, cx - r + 5, cy - r + 1, lw - 2, lw - 2);
-        XSetForeground(dpy, e->cgc, 0xffffff);
-        XFillRectangle(dpy, d, e->cgc, cx - r + 1, cy - r + 4, lw - 1, lw - 1);
-        XSetForeground(dpy, e->cgc, col);
-        XDrawRectangle(dpy, d, e->cgc, cx - r + 1, cy - r + 4, lw - 1, lw - 1);
         break;
     }
     case ICON_CHECK: {
@@ -1677,7 +1688,7 @@ static int panel_width(editor_t *e) {
     w += NCOLORS * (sp(26) + sp(4)) + sp(6);       /* цвета */
     w += sp(26) + sp(4) + str_width(sp(13), "Very wide label 00.0% ") + sp(10) + sp(4) +
          sp(26);
-    w += sp(10) + sp(34) + sp(6) + sp(34) + sp(8); /* буфер + готово */
+    w += sp(10) + sp(34) + sp(8);                  /* готово */
     (void)e;
     return w;
 }
@@ -1708,8 +1719,6 @@ static void editor_relayout(editor_t *e) {
 
     /* правый край: копировать и «готово», ровно от края окна */
     int xdone = e->cw - sp(8) - sp(34);
-    int xcopy = xdone - sp(6) - sp(34);
-    ui_button(e, B_COPY, xcopy, y, sp(34), h);
     ui_button(e, B_DONE, xdone, y, sp(34), h);
 }
 
@@ -1799,9 +1808,6 @@ static void editor_paint(editor_t *e) {
         case B_UNDO:
             editor_draw_button(e, b, ICON_UNDO, NULL, 0, e->ops.n > 0);
             break;
-        case B_COPY:
-            editor_draw_button(e, b, ICON_COPY, NULL, 0, 1);
-            break;
         case B_DONE:
             editor_draw_button(e, b, ICON_CHECK, NULL, 0, 1);
             break;
@@ -1870,8 +1876,6 @@ static const char *tip_for(editor_t *e, int id, char *buf, size_t n) {
     switch (id) {
     case B_UNDO:
         return t(STR_UNDO);
-    case B_COPY:
-        return t(STR_COPY);
     case B_DONE:
         return t(STR_DONE);
     case B_PEN:
@@ -2098,38 +2102,45 @@ static img_t *editor_flatten(editor_t *e) {
     }
     XSync(dpy, False);
     XImage *out_xi = XGetImage(dpy, pm, 0, 0, e->iw, e->ih, AllPlanes, ZPixmap);
-    img_t *out = img_new(e->iw, e->ih);
-    for (int y = 0; y < e->ih; y++)
-        for (int x = 0; x < e->iw; x++)
-            out->px[(size_t)y * e->iw + x] = pixel_from_ximage(out_xi, x, y);
-    XDestroyImage(out_xi);
+    img_t *out = ximage_to_img(out_xi, e->iw, e->ih);
     XftDrawDestroy(xd);
     XFreeGC(dpy, g);
     XFreePixmap(dpy, pm);
     return out;
 }
 
-static void editor_copy(editor_t *e) {
-    if (getenv("XSNIP_DEBUG"))
-        fprintf(stderr, "copy: ops=%d\n", e->ops.n);
+/* Буфер всегда содержит то, что сейчас в редакторе: обновляем после каждого
+ * изменения, чтобы после выделения области ничего не требовалось нажимать. */
+/* отложенное обновление: серия быстрых действий не должна тормозить редактор */
+static void editor_clip_mark(editor_t *e) {
+    e->clip_dirty = 1;
+    e->clip_deadline = now_ms() + 150;
+}
+
+static void editor_clip_update(editor_t *e) {
+    e->clip_dirty = 0;
+    long t0 = getenv("XSNIP_DEBUG") ? now_ms() : 0;
     img_t *flat = editor_flatten(e);
-    unsigned char *png;
-    size_t len;
-    if (png_encode(flat, &png, &len) == 0) {
+    unsigned char *png = NULL;
+    size_t len = 0;
+    if (png_encode(flat, &png, &len, 1) == 0 && png) {
         clipboard_put_png(png, len);
         free(png);
     }
     img_free(flat);
+    if (getenv("XSNIP_DEBUG"))
+        fprintf(stderr, "буфер обновлён за %ld мс\n", now_ms() - t0);
 }
 
 static void editor_done(editor_t *e) {
+    if (e->clip_dirty)
+        editor_clip_update(e);   /* закрываемся — буфер должен быть свежим */
+    /* «готово» только пишет файл, если его просили */
     if (e->outpath) {
         img_t *flat = editor_flatten(e);
         if (png_write_file(flat, e->outpath) == 0)
             e->saved = 1;
         img_free(flat);
-    } else {
-        editor_copy(e);
     }
     e->done = 1;
 }
@@ -2168,6 +2179,7 @@ static void editor_commit_text(editor_t *e) {
     e->textbuf[0] = 0;
     editor_blit_canvas(e);
     XFlush(dpy);
+    editor_clip_mark(e);
 }
 
 /* вырезать прямоугольник из картинки и продолжить редактирование внутри */
@@ -2207,6 +2219,7 @@ static void editor_undo(editor_t *e) {
     }
     editor_repaint(e);
     XFlush(dpy);
+    editor_clip_mark(e);
 }
 
 static void editor_crop_apply(editor_t *e) {
@@ -2255,6 +2268,7 @@ static void editor_crop_apply(editor_t *e) {
     editor_repaint(e);
     editor_set_tool(e, 0);   /* после обрезки — снова перо */
     XFlush(dpy);
+    editor_clip_mark(e);
 }
 
 /* --- основное окно */
@@ -2374,6 +2388,8 @@ static void editor_run(editor_t *e) {
     editor_rebuild(e);
     editor_repaint(e);
     XFlush(dpy);
+    editor_clip_update(e);   /* выделил — уже в буфере, как у scrot */
+    e->clip_dirty = 0;
 
     for (;;) {
         XEvent ev;
@@ -2392,10 +2408,17 @@ static void editor_run(editor_t *e) {
                 if (left < wait)
                     wait = left > 0 ? left : 0;
             }
+            if (e->clip_dirty) {
+                long left = e->clip_deadline - now_ms();
+                if (left < wait)
+                    wait = left > 0 ? left : 0;
+            }
             struct timeval tv;
             tv.tv_sec = wait / 1000;
             tv.tv_usec = (wait % 1000) * 1000;
             if (select(fd + 1, &fds, NULL, NULL, &tv) == 0) {
+                if (e->clip_dirty && now_ms() >= e->clip_deadline)
+                    editor_clip_update(e);
                 if (e->resize_pending && now_ms() >= e->resize_deadline) {
                     e->resize_pending = 0;
                     editor_rebuild(e);
@@ -2565,9 +2588,7 @@ static void editor_run(editor_t *e) {
                 break;
             if (y < panel_h) {
                 int id = editor_hit(e, x, y);
-                if (id == B_COPY) {
-                    editor_copy(e);
-                } else if (id == B_UNDO) {
+                if (id == B_UNDO) {
                     editor_undo(e);
                 } else if (id == B_PEN) {
                     editor_set_tool(e, 0);
@@ -2669,6 +2690,7 @@ static void editor_run(editor_t *e) {
                         die("нет памяти (штрих)");
                     memcpy(op->pts, e->cur_pts, (size_t)e->cur_n * 2 * sizeof(int));
                 }
+                editor_clip_mark(e);
                 editor_blit_canvas(e);
                 XFlush(dpy);
             }
@@ -2779,6 +2801,8 @@ static void editor_run(editor_t *e) {
         }
     }
 finished:
+    if (e->clip_dirty)
+        editor_clip_update(e);
     cfg_save(&e->cfg);
     XDefineCursor(dpy, e->win, e->cur_arrow);
     if (e->view_xi) {

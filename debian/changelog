@@ -1,3 +1,17 @@
+xsnip (3.4-1) unstable; urgency=medium
+
+  * The clipboard always holds what is on the canvas: it is refreshed right
+    after the region is selected and after every change (stroke, text, crop,
+    undo). Same habit as scrot: nothing has to be pressed after selecting.
+  * The "copy to clipboard" button is gone; the checkmark only closes the
+    window (and writes the file with -o). Esc closes without touching the
+    clipboard.
+  * Clipboard updates are debounced by 150 ms and encoded with a faster zlib
+    level, and XImage is read through a fast path: on a 3000x2000 screen an
+    update went from ~590 ms to ~170 ms.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Tue, 03 Nov 2026 03:00:00 +0300
+
 xsnip (3.3-1) unstable; urgency=medium
 
   * Enter outside text input now acts as the "done" button; while text is
