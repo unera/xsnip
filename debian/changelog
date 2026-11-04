@@ -1,3 +1,13 @@
+xsnip (3.10-1) unstable; urgency=medium
+
+  * On exit the clipboard owner is no longer recreated when nothing changed:
+    the helper that already served the clipboard while the window was open
+    simply stays. A new one is forked only if the previous is gone or there
+    are edits that did not reach the clipboard yet. Re-creating the owner on
+    every exit left a short window in which a paste could find nothing.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Wed, 04 Nov 2026 17:20:00 +0300
+
 xsnip (3.9-2) unstable; urgency=medium
 
   * Rebuild: the 3.9-1 changelog entry had the wrong weekday.

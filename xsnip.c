@@ -49,7 +49,7 @@
 
 /* ------------------------------------------------------------------ общее */
 
-#define XSNIP_VERSION "3.9"
+#define XSNIP_VERSION "3.10"
 #define NCOLORS 5
 /* Панель и всё, что её составляет, масштабируется от самого высокого монитора:
  * за базу взято 800 px по высоте (как было раньше), дальше линейно. */
@@ -2895,14 +2895,18 @@ finished:
     {
         int alive = (e->clip_pid > 0 && kill(e->clip_pid, 0) == 0);
         Window owner = XGetSelectionOwner(dpy, A_CLIPBOARD);
-        clip_note("выход: демон %d %s, владелец CLIPBOARD 0x%lx", (int)e->clip_pid,
-                  alive ? "жив" : "мёртв", (unsigned long)owner);
-    }
-    editor_clip_update(e);
-    {
-        Window owner = XGetSelectionOwner(dpy, A_CLIPBOARD);
-        clip_note("после обновления: демон %d, владелец 0x%lx", (int)e->clip_pid,
-                  (unsigned long)owner);
+        clip_note("выход: демон %d %s, владелец CLIPBOARD 0x%lx, грязно=%d",
+                  (int)e->clip_pid, alive ? "жив" : "мёртв", (unsigned long)owner,
+                  e->clip_dirty);
+        if (!alive || owner == None) {
+            /* держателя нет — поднимаем заново */
+            clip_note("держателя нет, обновляю буфер");
+            editor_clip_update(e);
+        } else if (e->clip_dirty) {
+            /* остались неприменённые правки — дописываем */
+            clip_note("были несохранённые правки, обновляю буфер");
+            editor_clip_update(e);
+        }
     }
     cfg_save(&e->cfg);
     XDefineCursor(dpy, e->win, e->cur_arrow);
