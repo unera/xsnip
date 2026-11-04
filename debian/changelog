@@ -1,3 +1,15 @@
+xsnip (3.12-1) unstable; urgency=medium
+
+  * New option --close-on-blur (and --no-close-on-blur): the editor closes as
+    soon as it loses keyboard focus, finishing the work exactly like Esc — the
+    file is written with -o and the clipboard keeps the picture. Off by
+    default; the choice is remembered in the config file. FocusOut events that
+    arrive before the window has been focused, or within 400 ms of mapping,
+    are ignored so the window does not vanish while the WM is still giving it
+    focus.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Wed, 04 Nov 2026 19:30:00 +0300
+
 xsnip (3.11-1) unstable; urgency=medium
 
   * Esc (and the window close button) now finish the job exactly like the

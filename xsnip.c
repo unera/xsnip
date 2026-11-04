@@ -49,7 +49,7 @@
 
 /* ------------------------------------------------------------------ общее */
 
-#define XSNIP_VERSION "3.11"
+#define XSNIP_VERSION "3.12"
 #define NCOLORS 5
 /* Панель и всё, что её составляет, масштабируется от самого высокого монитора:
  * за базу взято 800 px по высоте (как было раньше), дальше линейно. */
@@ -141,6 +141,8 @@ static const char *LANG_TABLE[3][STR_COUNT] = {
         "      --text PCT           text size, %% of min(w,h) [1..50]\n"
         "      --window dialog|normal  editor window type\n"
         "      --pos center|tl|tr|bl|br  editor window position\n"
+        "      --close-on-blur      close the window when it loses focus\n"
+        "      --no-close-on-blur   do not (default)\n"
         "  -h, --help               this help\n",
     },
     /* ru */
@@ -168,6 +170,8 @@ static const char *LANG_TABLE[3][STR_COUNT] = {
         "      --text PCT           кегль текста в %% от min(w,h) [1..50]\n"
         "      --window dialog|normal  тип окна редактора\n"
         "      --pos center|tl|tr|bl|br  положение окна\n"
+        "      --close-on-blur      закрыть окно, когда оно теряет фокус\n"
+        "      --no-close-on-blur   не закрывать (по умолчанию)\n"
         "  -h, --help               эта справка\n",
     },
     /* zh */
@@ -195,6 +199,8 @@ static const char *LANG_TABLE[3][STR_COUNT] = {
         "      --text PCT           文字大小，min(w,h) 的百分比 [1..50]\n"
         "      --window dialog|normal  编辑器窗口类型\n"
         "      --pos center|tl|tr|bl|br  编辑器窗口位置\n"
+        "      --close-on-blur      失去焦点时关闭窗口\n"
+        "      --no-close-on-blur   不关闭（默认）\n"
         "  -h, --help               显示帮助\n",
     },
 };
@@ -469,6 +475,7 @@ typedef struct {
     int tool;         /* 0 перо, 1 текст */
     int wintype;      /* 0 dialog, 1 normal */
     int pos;          /* 0 center, 1 tl, 2 tr, 3 bl, 4 br */
+    int blur_close;   /* закрывать окно, когда оно теряет фокус */
 } cfg_t;
 
 static const char *POS_NAMES[5] = {"center", "tl", "tr", "bl", "br"};
@@ -561,6 +568,8 @@ static void cfg_load(cfg_t *c) {
             c->tool = strcmp(val, "text") == 0 ? 1 : (strcmp(val, "crop") == 0 ? 2 : 0);
         else if (strcmp(key, "window") == 0)
             c->wintype = strcmp(val, "normal") == 0 ? 1 : 0;
+        else if (strcmp(key, "blur") == 0)
+            c->blur_close = atoi(val) != 0;
         else if (strcmp(key, "pos") == 0) {
             for (int i = 0; i < 5; i++)
                 if (strcmp(val, POS_NAMES[i]) == 0)
@@ -607,6 +616,7 @@ static void cfg_save(const cfg_t *c) {
     fprintf(f, "tool=%s\n", c->tool == 1 ? "text" : (c->tool == 2 ? "crop" : "pen"));
     fprintf(f, "window=%s\n", c->wintype ? "normal" : "dialog");
     fprintf(f, "pos=%s\n", POS_NAMES[c->pos]);
+    fprintf(f, "blur=%d\n", c->blur_close ? 1 : 0);
     fclose(f);
     if (rename(tmp, path) != 0)
         unlink(tmp);
@@ -1474,6 +1484,8 @@ typedef struct {
     int clip_dirty;        /* в буфере устаревшая картинка */
     long clip_deadline;
     pid_t clip_pid;        /* последний демон буфера */
+    int had_focus;         /* окно уже получало фокус */
+    long opened_at;        /* когда окно показалось */
     int crop_px, crop_py, crop_pw, crop_ph;   /* прошлая рамка в координатах окна */
 
     int text_active;
@@ -2449,7 +2461,7 @@ static void editor_run(editor_t *e) {
     XSelectInput(dpy, e->win,
                  ExposureMask | ButtonPressMask | ButtonReleaseMask |
                      PointerMotionMask | KeyPressMask | StructureNotifyMask |
-                     ButtonMotionMask);
+                     ButtonMotionMask | FocusChangeMask);
     editor_map_prepare(e);
     e->draw = XftDrawCreate(dpy, e->win, visual, cmap);
     e->cgc = XCreateGC(dpy, e->win, 0, NULL);
@@ -2472,6 +2484,7 @@ static void editor_run(editor_t *e) {
     editor_place(e, winw, winh);
     editor_make_ic(e->win);
 
+    e->opened_at = now_ms();
     e->cw = winw;
     e->ch = winh - panel_h;
     editor_rebuild(e);
@@ -2884,6 +2897,36 @@ static void editor_run(editor_t *e) {
             }
             break;
         }
+        case FocusIn:
+            if (getenv("XSNIP_DEBUG"))
+                fprintf(stderr, "FocusIn mode=%d detail=%d\n", ev.xfocus.mode,
+                        ev.xfocus.detail);
+            if (ev.xfocus.window == e->win)
+                e->had_focus = 1;
+            break;
+        case FocusOut:
+            if (getenv("XSNIP_DEBUG"))
+                fprintf(stderr, "FocusOut mode=%d detail=%d had_focus=%d blur=%d\n",
+                        ev.xfocus.mode, ev.xfocus.detail, e->had_focus, e->cfg.blur_close);
+            /* сразу после появления окно может ещё не получить фокус —
+             * такие FocusOut потерей не считаем */
+            if (!e->cfg.blur_close || !e->had_focus || ev.xfocus.window != e->win ||
+                ev.xfocus.mode == NotifyGrab || ev.xfocus.mode == NotifyUngrab)
+                break;
+            if (now_ms() - e->opened_at < 400)
+                break;
+            {
+                Window focus = None;
+                int revert = 0;
+                XGetInputFocus(dpy, &focus, &revert);
+                if (focus == e->win)
+                    break;
+            }
+            clip_note("потерян фокус — закрываюсь как по Esc");
+            editor_done(e);
+            if (e->done)
+                goto finished;
+            break;
         case ClientMessage:
             if ((Atom)ev.xclient.data.l[0] == e->wm_delete) {
                 editor_done(e);
@@ -2955,6 +2998,8 @@ int main(int argc, char **argv) {
 
     int select_flag = 0;
     int all_screens = 0;
+    int blur_seen = 0;
+    int blur_val = 0;
     const char *outpath = NULL;
     double delay = 0.0;
 
@@ -2964,6 +3009,12 @@ int main(int argc, char **argv) {
             select_flag = 1;
         } else if (!strcmp(a, "-a") || !strcmp(a, "--all")) {
             all_screens = 1;
+        } else if (!strcmp(a, "--close-on-blur")) {
+            blur_seen = 1;
+            blur_val = 1;
+        } else if (!strcmp(a, "--no-close-on-blur")) {
+            blur_seen = 1;
+            blur_val = 0;
         } else if (!strcmp(a, "-o") || !strcmp(a, "--output")) {
             if (++i >= argc)
                 die("нужно имя файла после %s", a);
@@ -3043,6 +3094,8 @@ int main(int argc, char **argv) {
         }
     }
 
+    if (blur_seen)
+        cfg.blur_close = blur_val;
     if (cfg.pen < PEN_MIN) cfg.pen = PEN_MIN;
     if (cfg.pen > PEN_MAX) cfg.pen = PEN_MAX;
     if (cfg.txt < TXT_MIN) cfg.txt = TXT_MIN;

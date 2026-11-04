@@ -12,7 +12,7 @@ sleep 0.5
 run() {
     local mode=$1
     rm -f /tmp/compat.png
-    setsid /home/dsh/work/ai/xsnip/xsnip -s -o /tmp/compat.png >/tmp/compat.log 2>&1 &
+    setsid /usr/bin/xsnip -s -o /tmp/compat.png >/tmp/compat.log 2>&1 &
     sleep 2.5
     xdotool mousemove 200 150 mousedown 1
     sleep 0.1
