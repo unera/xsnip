@@ -49,7 +49,7 @@
 
 /* ------------------------------------------------------------------ общее */
 
-#define XSNIP_VERSION "3.5"
+#define XSNIP_VERSION "3.6"
 #define NCOLORS 5
 /* Панель и всё, что её составляет, масштабируется от самого высокого монитора:
  * за базу взято 800 px по высоте (как было раньше), дальше линейно. */
@@ -775,6 +775,22 @@ static size_t max_prop_bytes(void) {
     return m;
 }
 
+static FILE *clip_log;
+
+static void clip_logf(const char *fmt, ...) {
+    if (!clip_log)
+        return;
+    va_list ap;
+    va_start(ap, fmt);
+    fprintf(clip_log, "демон %d: ", (int)getpid());
+    vfprintf(clip_log, fmt, ap);
+    fputc('\n', clip_log);
+    va_end(ap);
+    fflush(clip_log);
+}
+
+static int ack_fd = -1;
+
 static void clipboard_daemon(unsigned char *data, size_t len) {
     /* вызывается уже в потомке */
     Window win = XCreateSimpleWindow(dpy, root, -10, -10, 1, 1, 0, 0, 0);
@@ -782,9 +798,18 @@ static void clipboard_daemon(unsigned char *data, size_t len) {
         _exit(1);
     XSelectInput(dpy, win, PropertyChangeMask);
     XSetSelectionOwner(dpy, A_CLIPBOARD, win, CurrentTime);
-    if (XGetSelectionOwner(dpy, A_CLIPBOARD) != win)
+    if (XGetSelectionOwner(dpy, A_CLIPBOARD) != win) {
+        clip_logf("не смог стать владельцем selection");
         _exit(1);
+    }
     XFlush(dpy);
+    clip_logf("владею CLIPBOARD, данных %zu байт", len);
+    if (ack_fd >= 0) {
+        ssize_t wr = write(ack_fd, "1", 1);
+        (void)wr;
+        close(ack_fd);
+        ack_fd = -1;
+    }
 
     incr_t incs[INCR_MAX];
     memset(incs, 0, sizeof(incs));
@@ -814,6 +839,8 @@ static void clipboard_daemon(unsigned char *data, size_t len) {
         case SelectionRequest: {
             XSelectionRequestEvent *rq = &ev.xselectionrequest;
             Atom prop = rq->property ? rq->property : rq->target;
+            clip_logf("запрос target=0x%lx от окна 0x%lx", (unsigned long)rq->target,
+                      (unsigned long)rq->requestor);
             if (rq->target == A_TARGETS) {
                 Atom list[4] = {A_TARGETS, A_PNG_IMAGE, A_PNG_UPPER, XA_STRING};
                 XChangeProperty(dpy, rq->requestor, prop, XA_ATOM, 32, PropModeReplace,
@@ -885,6 +912,7 @@ static void clipboard_daemon(unsigned char *data, size_t len) {
             break;
         }
         case SelectionClear:
+            clip_logf("SelectionClear — выбор забрали, выхожу");
             _exit(0);
         default:
             break;
@@ -899,6 +927,10 @@ static void clipboard_put_png(const unsigned char *data, size_t len) {
         die("нет памяти под буфер");
     memcpy(copy, data, len);
 
+    int sync_pipe[2] = {-1, -1};
+    if (pipe(sync_pipe) != 0)
+        sync_pipe[0] = sync_pipe[1] = -1;
+
     pid_t pid = fork();
     if (pid < 0) {
         free(copy);
@@ -906,6 +938,8 @@ static void clipboard_put_png(const unsigned char *data, size_t len) {
         return;
     }
     if (pid == 0) {
+        if (sync_pipe[0] >= 0)
+            close(sync_pipe[0]);
         setsid();
         int devnull = open("/dev/null", O_RDWR);
         if (devnull >= 0) {
@@ -922,10 +956,25 @@ static void clipboard_put_png(const unsigned char *data, size_t len) {
         if (!nd)
             _exit(1);
         dpy = nd;
+        ack_fd = sync_pipe[1];
+        if (getenv("XSNIP_DEBUG"))
+            clip_log = fopen("/tmp/xsnip-clip.log", "a");
         clipboard_daemon(copy, len);
         _exit(0);
     }
-    /* родитель: не ждём, потомок сам держит выделение */
+    /* родитель: ждём подтверждения, что демон уже владеет CLIPBOARD —
+     * иначе вставка сразу после закрытия окна попадает в пустоту */
+    if (sync_pipe[1] >= 0) {
+        close(sync_pipe[1]);
+        struct timeval tv = {0, 200000};
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(sync_pipe[0], &rfds);
+        char ack = 0;
+        if (select(sync_pipe[0] + 1, &rfds, NULL, NULL, &tv) > 0)
+            (void)read(sync_pipe[0], &ack, 1);
+        close(sync_pipe[0]);
+    }
     free(copy);
     int status;
     waitpid(pid, &status, WNOHANG);

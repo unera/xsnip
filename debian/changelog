@@ -1,3 +1,13 @@
+xsnip (3.6-1) unstable; urgency=medium
+
+  * The parent now waits (up to 200 ms) until the forked clipboard helper has
+    actually taken the CLIPBOARD selection, so a paste right after the window
+    closes cannot land in the gap between the old and the new owner.
+  * With XSNIP_DEBUG=1 the helper writes what it does to /tmp/xsnip-clip.log:
+    becoming the selection owner, requests it serves, and why it exits.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Tue, 04 Nov 2026 12:40:00 +0300
+
 xsnip (3.5-1) unstable; urgency=medium
 
   * The clipboard is refreshed on every way out of the editor — the checkmark,
