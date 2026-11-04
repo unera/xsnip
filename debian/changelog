@@ -1,3 +1,14 @@
+xsnip (3.9-1) unstable; urgency=medium
+
+  * Root cause of the empty clipboard after Esc: TARGETS advertised STRING, so
+    a client tried text first, got a refusal and gave up instead of asking for
+    image/png. With STRING gone, pasting right after Esc works. Verified on the
+    machine where the problem was reported.
+  * The clipboard diagnostics log is tucked back under XSNIP_DEBUG=1 (it writes
+    to /tmp/xsnip-clip.log); it is no longer written unconditionally.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Tue, 04 Nov 2026 16:00:00 +0300
+
 xsnip (3.8-1) unstable; urgency=medium
 
   * Clipboard log shows target names instead of raw atom numbers and says

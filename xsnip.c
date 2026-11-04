@@ -49,7 +49,7 @@
 
 /* ------------------------------------------------------------------ общее */
 
-#define XSNIP_VERSION "3.8"
+#define XSNIP_VERSION "3.9"
 #define NCOLORS 5
 /* Панель и всё, что её составляет, масштабируется от самого высокого монитора:
  * за базу взято 800 px по высоте (как было раньше), дальше линейно. */
@@ -964,7 +964,8 @@ static pid_t clipboard_put_png(const unsigned char *data, size_t len) {
             _exit(1);
         dpy = nd;
         ack_fd = sync_pipe[1];
-        clip_log = fopen("/tmp/xsnip-clip.log", "a");
+        if (getenv("XSNIP_DEBUG"))
+            clip_log = fopen("/tmp/xsnip-clip.log", "a");
         if (clip_log) {
             struct stat st;
             if (fstat(fileno(clip_log), &st) == 0 && st.st_size > 200000) {
@@ -2183,6 +2184,8 @@ static void editor_clip_mark(editor_t *e) {
 
 /* короткий лог того, что происходит с буфером: пишется всегда */
 static void clip_note(const char *fmt, ...) {
+    if (!getenv("XSNIP_DEBUG"))
+        return;
     FILE *f = fopen("/tmp/xsnip-clip.log", "a");
     if (!f)
         return;
