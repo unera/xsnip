@@ -1,3 +1,12 @@
+xsnip (3.5-1) unstable; urgency=medium
+
+  * The clipboard is refreshed on every way out of the editor — the checkmark,
+    Esc and the window close button now leave the same result and a live
+    clipboard helper. Reported: after Esc the clipboard came out empty, which
+    this rules out as far as the program itself is concerned.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Tue, 03 Nov 2026 03:50:00 +0300
+
 xsnip (3.4-1) unstable; urgency=medium
 
   * The clipboard always holds what is on the canvas: it is refreshed right

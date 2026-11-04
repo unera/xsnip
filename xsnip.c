@@ -49,7 +49,7 @@
 
 /* ------------------------------------------------------------------ общее */
 
-#define XSNIP_VERSION "3.4"
+#define XSNIP_VERSION "3.5"
 #define NCOLORS 5
 /* Панель и всё, что её составляет, масштабируется от самого высокого монитора:
  * за базу взято 800 px по высоте (как было раньше), дальше линейно. */
@@ -2133,8 +2133,6 @@ static void editor_clip_update(editor_t *e) {
 }
 
 static void editor_done(editor_t *e) {
-    if (e->clip_dirty)
-        editor_clip_update(e);   /* закрываемся — буфер должен быть свежим */
     /* «готово» только пишет файл, если его просили */
     if (e->outpath) {
         img_t *flat = editor_flatten(e);
@@ -2801,8 +2799,11 @@ static void editor_run(editor_t *e) {
         }
     }
 finished:
-    if (e->clip_dirty)
-        editor_clip_update(e);
+    /* на выходе буфер обновляем всегда: кнопка ✓, Esc и крестик должны
+     * оставлять одинаковый результат, а демон буфера — живым */
+    editor_clip_update(e);
+    if (getenv("XSNIP_DEBUG"))
+        fprintf(stderr, "выход: буфер обновлён\n");
     cfg_save(&e->cfg);
     XDefineCursor(dpy, e->win, e->cur_arrow);
     if (e->view_xi) {
