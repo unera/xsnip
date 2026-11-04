@@ -8,7 +8,7 @@ sleep 0.5
 ok=0; bad=0
 for i in $(seq 1 6); do
   rm -rf "$XDG_CONFIG_HOME"; mkdir -p "$XDG_CONFIG_HOME"
-  setsid /home/dsh/work/ai/xsnip/xsnip -s >/tmp/loop$i.log 2>&1 &
+  setsid /usr/bin/xsnip -s >/tmp/loop$i.log 2>&1 &
   sleep 2.2
   xdotool mousemove 200 150 mousedown 1
   sleep 0.1

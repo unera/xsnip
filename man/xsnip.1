@@ -1,5 +1,5 @@
 .\" xsnip — screenshot tool with a minimal markup editor
-.TH XSNIP 1 "2026-11-02" "xsnip 3.10" "User Commands"
+.TH XSNIP 1 "2026-11-02" "xsnip 3.11" "User Commands"
 .SH NAME
 xsnip \- take a screenshot of the screen or a region and mark it up
 .SH SYNOPSIS
@@ -31,7 +31,8 @@ refreshed after every change (a stroke, a text, a crop, an undo) and right
 after the region is selected, so nothing has to be pressed. The checkmark
 closes the window (and writes the file when
 .B \-o
-was given); Esc just closes it and never touches the clipboard.
+was given); Esc and the window close button do exactly the same, so a script
+written for scrot keeps working.
 .SH OPTIONS
 .TP
 .B \-s, \-\-select
@@ -101,7 +102,7 @@ r, 3         crop
 4 ... 8      colour from the palette
 Ctrl+Z       undo the last stroke, text or crop
 Enter        place the typed text; outside text input it is the "done" button
-Esc          cancel text input, otherwise close the window
+Esc          cancel text input, otherwise finish and close (like the checkmark)
 .fi
 .PP
 The "crop" tool: drag a rectangle inside the editor (or set two corners with

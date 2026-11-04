@@ -49,7 +49,7 @@
 
 /* ------------------------------------------------------------------ общее */
 
-#define XSNIP_VERSION "3.10"
+#define XSNIP_VERSION "3.11"
 #define NCOLORS 5
 /* Панель и всё, что её составляет, масштабируется от самого высокого монитора:
  * за базу взято 800 px по высоте (как было раньше), дальше линейно. */
@@ -2852,8 +2852,13 @@ static void editor_run(editor_t *e) {
                 break;
             }
             if (ks == XK_Escape) {
-                e->done = 1;
-                goto finished;
+                /* Esc закрывает так же, как ✓: работа доделывается
+                 * (с -o файл пишется), чтобы замена scrot работала без
+                 * правок в вызывающем скрипте */
+                editor_done(e);
+                if (e->done)
+                    goto finished;
+                break;
             }
             if (ks == XK_Return || ks == XK_KP_Enter) {
                 /* Enter вне ввода текста — это кнопка «готово» */
@@ -2881,7 +2886,7 @@ static void editor_run(editor_t *e) {
         }
         case ClientMessage:
             if ((Atom)ev.xclient.data.l[0] == e->wm_delete) {
-                e->done = 1;
+                editor_done(e);
                 goto finished;
             }
             break;

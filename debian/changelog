@@ -1,3 +1,13 @@
+xsnip (3.11-1) unstable; urgency=medium
+
+  * Esc (and the window close button) now finish the job exactly like the
+    checkmark: with -o the PNG is written, the clipboard is refreshed. This
+    makes xsnip a drop-in replacement for scrot in scripts that do
+    "scrot -s -o file && xclip ... file": before, Esc left the file empty and
+    xclip then wiped the clipboard with it.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Wed, 04 Nov 2026 18:10:00 +0300
+
 xsnip (3.10-1) unstable; urgency=medium
 
   * On exit the clipboard owner is no longer recreated when nothing changed:
