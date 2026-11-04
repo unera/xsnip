@@ -7,7 +7,7 @@ xsnip (3.9-1) unstable; urgency=medium
   * The clipboard diagnostics log is tucked back under XSNIP_DEBUG=1 (it writes
     to /tmp/xsnip-clip.log); it is no longer written unconditionally.
 
- -- Dmitry Oboukhov <unera@debian.org>  Tue, 04 Nov 2026 16:00:00 +0300
+ -- Dmitry Oboukhov <unera@debian.org>  Wed, 04 Nov 2026 16:00:00 +0300
 
 xsnip (3.8-1) unstable; urgency=medium
 
