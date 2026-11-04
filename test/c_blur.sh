@@ -4,7 +4,7 @@ set -u
 export DISPLAY=:99
 export XDG_CONFIG_HOME=/tmp/cfgblur
 HERE=$(cd "$(dirname "$0")" && pwd)
-APP=${APP:-$HERE/../xsnip}
+APP=${APP:-/usr/bin/xsnip}
 
 alive() { xwininfo -id "$1" >/dev/null 2>&1; }
 

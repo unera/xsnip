@@ -1,3 +1,10 @@
+xsnip (3.13-1) unstable; urgency=medium
+
+  * Short alias -B for --close-on-blur (-F belongs to scrot's --file, and -B
+    keeps the "blur" mnemonic).
+
+ -- Dmitry Oboukhov <unera@debian.org>  Wed, 04 Nov 2026 20:10:00 +0300
+
 xsnip (3.12-1) unstable; urgency=medium
 
   * New option --close-on-blur (and --no-close-on-blur): the editor closes as

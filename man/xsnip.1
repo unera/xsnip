@@ -1,5 +1,5 @@
 .\" xsnip — screenshot tool with a minimal markup editor
-.TH XSNIP 1 "2026-11-02" "xsnip 3.12" "User Commands"
+.TH XSNIP 1 "2026-11-02" "xsnip 3.13" "User Commands"
 .SH NAME
 xsnip \- take a screenshot of the screen or a region and mark it up
 .SH SYNOPSIS
@@ -22,7 +22,7 @@ xsnip \- take a screenshot of the screen or a region and mark it up
 .IR dialog|normal ]
 .RB [ \-\-pos
 .IR center|tl|tr|bl|br ]
-.RB [ \-\-close-on-blur ]
+.RB [ \-B ]
 .SH DESCRIPTION
 .B xsnip
 grabs the screen (or a rectangle selected with the mouse), opens a small
@@ -86,7 +86,7 @@ Position of the editor window: centre or a corner (top-left, top-right,
 bottom-left, bottom-right) with a 10-point margin, counted from the monitor
 the window opens on.
 .TP
-.B \-\-close-on-blur, \-\-no-close-on-blur
+.B \-B, \-\-close-on-blur, \-\-no-close-on-blur
 Close the editor as soon as it loses keyboard focus; the work is finished the
 same way as with the checkmark (the file is written when
 .B \-o

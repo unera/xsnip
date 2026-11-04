@@ -14,6 +14,7 @@
  *   --text PCT                кегль текста, % от min(w,h)  [1 .. 50]
  *   --window dialog|normal    тип окна редактора
  *   --pos center|tl|tr|bl|br  положение окна редактора
+ *   -B, --close-on-blur       закрыть окно, когда оно теряет фокус
  *
  * Настройки (цвет, размеры, инструмент, тип и место окна) хранятся в
  * $XDG_CONFIG_HOME/xsnip/config или ~/.config/xsnip/config.
@@ -49,7 +50,7 @@
 
 /* ------------------------------------------------------------------ общее */
 
-#define XSNIP_VERSION "3.12"
+#define XSNIP_VERSION "3.13"
 #define NCOLORS 5
 /* Панель и всё, что её составляет, масштабируется от самого высокого монитора:
  * за базу взято 800 px по высоте (как было раньше), дальше линейно. */
@@ -141,7 +142,7 @@ static const char *LANG_TABLE[3][STR_COUNT] = {
         "      --text PCT           text size, %% of min(w,h) [1..50]\n"
         "      --window dialog|normal  editor window type\n"
         "      --pos center|tl|tr|bl|br  editor window position\n"
-        "      --close-on-blur      close the window when it loses focus\n"
+        "  -B, --close-on-blur      close the window when it loses focus\n"
         "      --no-close-on-blur   do not (default)\n"
         "  -h, --help               this help\n",
     },
@@ -170,7 +171,7 @@ static const char *LANG_TABLE[3][STR_COUNT] = {
         "      --text PCT           кегль текста в %% от min(w,h) [1..50]\n"
         "      --window dialog|normal  тип окна редактора\n"
         "      --pos center|tl|tr|bl|br  положение окна\n"
-        "      --close-on-blur      закрыть окно, когда оно теряет фокус\n"
+        "  -B, --close-on-blur      закрыть окно, когда оно теряет фокус\n"
         "      --no-close-on-blur   не закрывать (по умолчанию)\n"
         "  -h, --help               эта справка\n",
     },
@@ -199,7 +200,7 @@ static const char *LANG_TABLE[3][STR_COUNT] = {
         "      --text PCT           文字大小，min(w,h) 的百分比 [1..50]\n"
         "      --window dialog|normal  编辑器窗口类型\n"
         "      --pos center|tl|tr|bl|br  编辑器窗口位置\n"
-        "      --close-on-blur      失去焦点时关闭窗口\n"
+        "  -B, --close-on-blur      失去焦点时关闭窗口\n"
         "      --no-close-on-blur   不关闭（默认）\n"
         "  -h, --help               显示帮助\n",
     },
@@ -3009,7 +3010,7 @@ int main(int argc, char **argv) {
             select_flag = 1;
         } else if (!strcmp(a, "-a") || !strcmp(a, "--all")) {
             all_screens = 1;
-        } else if (!strcmp(a, "--close-on-blur")) {
+        } else if (!strcmp(a, "-B") || !strcmp(a, "--close-on-blur")) {
             blur_seen = 1;
             blur_val = 1;
         } else if (!strcmp(a, "--no-close-on-blur")) {
