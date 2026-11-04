@@ -49,7 +49,7 @@
 
 /* ------------------------------------------------------------------ общее */
 
-#define XSNIP_VERSION "3.6"
+#define XSNIP_VERSION "3.7"
 #define NCOLORS 5
 /* Панель и всё, что её составляет, масштабируется от самого высокого монитора:
  * за базу взято 800 px по высоте (как было раньше), дальше линейно. */
@@ -921,7 +921,7 @@ static void clipboard_daemon(unsigned char *data, size_t len) {
 }
 
 /* Копирует PNG в буфер: потомок живёт, пока данные не заберут. */
-static void clipboard_put_png(const unsigned char *data, size_t len) {
+static pid_t clipboard_put_png(const unsigned char *data, size_t len) {
     unsigned char *copy = malloc(len);
     if (!copy)
         die("нет памяти под буфер");
@@ -935,7 +935,7 @@ static void clipboard_put_png(const unsigned char *data, size_t len) {
     if (pid < 0) {
         free(copy);
         fprintf(stderr, "xsnip: fork: %s\n", strerror(errno));
-        return;
+        return -1;
     }
     if (pid == 0) {
         if (sync_pipe[0] >= 0)
@@ -957,8 +957,14 @@ static void clipboard_put_png(const unsigned char *data, size_t len) {
             _exit(1);
         dpy = nd;
         ack_fd = sync_pipe[1];
-        if (getenv("XSNIP_DEBUG"))
-            clip_log = fopen("/tmp/xsnip-clip.log", "a");
+        clip_log = fopen("/tmp/xsnip-clip.log", "a");
+        if (clip_log) {
+            struct stat st;
+            if (fstat(fileno(clip_log), &st) == 0 && st.st_size > 200000) {
+                fclose(clip_log);
+                clip_log = fopen("/tmp/xsnip-clip.log", "w");
+            }
+        }
         clipboard_daemon(copy, len);
         _exit(0);
     }
@@ -978,6 +984,7 @@ static void clipboard_put_png(const unsigned char *data, size_t len) {
     free(copy);
     int status;
     waitpid(pid, &status, WNOHANG);
+    return pid;
 }
 
 /* ---------------------------------------------------------- выбор области */
@@ -1458,6 +1465,7 @@ typedef struct {
 
     int clip_dirty;        /* в буфере устаревшая картинка */
     long clip_deadline;
+    pid_t clip_pid;        /* последний демон буфера */
     int crop_px, crop_py, crop_pw, crop_ph;   /* прошлая рамка в координатах окна */
 
     int text_active;
@@ -2166,6 +2174,27 @@ static void editor_clip_mark(editor_t *e) {
     e->clip_deadline = now_ms() + 150;
 }
 
+/* короткий лог того, что происходит с буфером: пишется всегда */
+static void clip_note(const char *fmt, ...) {
+    FILE *f = fopen("/tmp/xsnip-clip.log", "a");
+    if (!f)
+        return;
+    struct stat st;
+    if (fstat(fileno(f), &st) == 0 && st.st_size > 200000) {
+        fclose(f);
+        f = fopen("/tmp/xsnip-clip.log", "w");
+        if (!f)
+            return;
+    }
+    va_list ap;
+    va_start(ap, fmt);
+    fprintf(f, "xsnip %d: ", (int)getpid());
+    vfprintf(f, fmt, ap);
+    fputc('\n', f);
+    va_end(ap);
+    fclose(f);
+}
+
 static void editor_clip_update(editor_t *e) {
     e->clip_dirty = 0;
     long t0 = getenv("XSNIP_DEBUG") ? now_ms() : 0;
@@ -2173,8 +2202,11 @@ static void editor_clip_update(editor_t *e) {
     unsigned char *png = NULL;
     size_t len = 0;
     if (png_encode(flat, &png, &len, 1) == 0 && png) {
-        clipboard_put_png(png, len);
+        e->clip_pid = clipboard_put_png(png, len);
+        clip_note("буфер обновлён (%zu байт), демон %d", len, (int)e->clip_pid);
         free(png);
+    } else {
+        clip_note("не смог собрать PNG для буфера");
     }
     img_free(flat);
     if (getenv("XSNIP_DEBUG"))
@@ -2850,9 +2882,18 @@ static void editor_run(editor_t *e) {
 finished:
     /* на выходе буфер обновляем всегда: кнопка ✓, Esc и крестик должны
      * оставлять одинаковый результат, а демон буфера — живым */
+    {
+        int alive = (e->clip_pid > 0 && kill(e->clip_pid, 0) == 0);
+        Window owner = XGetSelectionOwner(dpy, A_CLIPBOARD);
+        clip_note("выход: демон %d %s, владелец CLIPBOARD 0x%lx", (int)e->clip_pid,
+                  alive ? "жив" : "мёртв", (unsigned long)owner);
+    }
     editor_clip_update(e);
-    if (getenv("XSNIP_DEBUG"))
-        fprintf(stderr, "выход: буфер обновлён\n");
+    {
+        Window owner = XGetSelectionOwner(dpy, A_CLIPBOARD);
+        clip_note("после обновления: демон %d, владелец 0x%lx", (int)e->clip_pid,
+                  (unsigned long)owner);
+    }
     cfg_save(&e->cfg);
     XDefineCursor(dpy, e->win, e->cur_arrow);
     if (e->view_xi) {

@@ -1,3 +1,15 @@
+xsnip (3.7-1) unstable; urgency=medium
+
+  * Clipboard diagnostics: xsnip now always appends what happens with the
+    selection to /tmp/xsnip-clip.log (up to 200 KB, then it starts over) —
+    whether the helper took CLIPBOARD, which requests it served, who owned
+    the selection at exit. This is to chase a report where Esc left an empty
+    clipboard on one machine while the checkmark worked.
+  * On exit the owner of CLIPBOARD is logged before and after the final
+    refresh.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Tue, 04 Nov 2026 14:20:00 +0300
+
 xsnip (3.6-1) unstable; urgency=medium
 
   * The parent now waits (up to 200 ms) until the forked clipboard helper has
