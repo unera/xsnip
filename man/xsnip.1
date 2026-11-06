@@ -1,5 +1,5 @@
 .\" xsnip — screenshot tool with a minimal markup editor
-.TH XSNIP 1 "2026-11-02" "xsnip 3.13" "User Commands"
+.TH XSNIP 1 "2026-11-02" "xsnip 3.14" "User Commands"
 .SH NAME
 xsnip \- take a screenshot of the screen or a region and mark it up
 .SH SYNOPSIS
@@ -23,6 +23,8 @@ xsnip \- take a screenshot of the screen or a region and mark it up
 .RB [ \-\-pos
 .IR center|tl|tr|bl|br ]
 .RB [ \-B ]
+.RB [ \-\-dim
+.IR percent ]
 .SH DESCRIPTION
 .B xsnip
 grabs the screen (or a rectangle selected with the mouse), opens a small
@@ -85,6 +87,11 @@ gives a regular window that the window manager tiles.
 Position of the editor window: centre or a corner (top-left, top-right,
 bottom-left, bottom-right) with a 10-point margin, counted from the monitor
 the window opens on.
+.TP
+.BI \-\-dim\  percent
+Brightness of the dimmed screen while selecting a region, 0 to 100, default
+70. 100 disables dimming (the screen is shown as it is), 0 makes it black.
+The value is saved in the config file.
 .TP
 .B \-B, \-\-close-on-blur, \-\-no-close-on-blur
 Close the editor as soon as it loses keyboard focus; the work is finished the

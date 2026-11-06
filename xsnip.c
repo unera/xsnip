@@ -14,6 +14,7 @@
  *   --text PCT                кегль текста, % от min(w,h)  [1 .. 50]
  *   --window dialog|normal    тип окна редактора
  *   --pos center|tl|tr|bl|br  положение окна редактора
+ *   --dim PCT                 яркость затемнения 0..100 (по умолчанию 70)
  *   -B, --close-on-blur       закрыть окно, когда оно теряет фокус
  *
  * Настройки (цвет, размеры, инструмент, тип и место окна) хранятся в
@@ -50,7 +51,7 @@
 
 /* ------------------------------------------------------------------ общее */
 
-#define XSNIP_VERSION "3.13"
+#define XSNIP_VERSION "3.14"
 #define NCOLORS 5
 /* Панель и всё, что её составляет, масштабируется от самого высокого монитора:
  * за базу взято 800 px по высоте (как было раньше), дальше линейно. */
@@ -142,6 +143,8 @@ static const char *LANG_TABLE[3][STR_COUNT] = {
         "      --text PCT           text size, %% of min(w,h) [1..50]\n"
         "      --window dialog|normal  editor window type\n"
         "      --pos center|tl|tr|bl|br  editor window position\n"
+        "      --dim PCT            brightness of the dimmed screen 0..100 (default 70;\n"
+        "                           100 = no dimming, nothing is repainted then)\n"
         "  -B, --close-on-blur      close the window when it loses focus\n"
         "      --no-close-on-blur   do not (default)\n"
         "  -h, --help               this help\n",
@@ -171,6 +174,8 @@ static const char *LANG_TABLE[3][STR_COUNT] = {
         "      --text PCT           кегль текста в %% от min(w,h) [1..50]\n"
         "      --window dialog|normal  тип окна редактора\n"
         "      --pos center|tl|tr|bl|br  положение окна\n"
+        "      --dim PCT            яркость затемнения 0..100 (по умолчанию 70;\n"
+        "                           100 — без затемнения, ничего не перерисовывается)\n"
         "  -B, --close-on-blur      закрыть окно, когда оно теряет фокус\n"
         "      --no-close-on-blur   не закрывать (по умолчанию)\n"
         "  -h, --help               эта справка\n",
@@ -200,6 +205,8 @@ static const char *LANG_TABLE[3][STR_COUNT] = {
         "      --text PCT           文字大小，min(w,h) 的百分比 [1..50]\n"
         "      --window dialog|normal  编辑器窗口类型\n"
         "      --pos center|tl|tr|bl|br  编辑器窗口位置\n"
+        "      --dim PCT            变暗后的亮度 0..100（默认 70；\n"
+        "                           100 表示不变暗，此时不重绘任何内容）\n"
         "  -B, --close-on-blur      失去焦点时关闭窗口\n"
         "      --no-close-on-blur   不关闭（默认）\n"
         "  -h, --help               显示帮助\n",
@@ -477,6 +484,7 @@ typedef struct {
     int wintype;      /* 0 dialog, 1 normal */
     int pos;          /* 0 center, 1 tl, 2 tr, 3 bl, 4 br */
     int blur_close;   /* закрывать окно, когда оно теряет фокус */
+    int dim;          /* яркость затемнения экрана: 0..100 % */
 } cfg_t;
 
 static const char *POS_NAMES[5] = {"center", "tl", "tr", "bl", "br"};
@@ -540,6 +548,7 @@ static void cfg_defaults(cfg_t *c) {
     c->txt = TXT_DEF;
     c->tool = 0;
     c->wintype = 0;
+    c->dim = 70;
     c->pos = 0;
 }
 
@@ -569,6 +578,8 @@ static void cfg_load(cfg_t *c) {
             c->tool = strcmp(val, "text") == 0 ? 1 : (strcmp(val, "crop") == 0 ? 2 : 0);
         else if (strcmp(key, "window") == 0)
             c->wintype = strcmp(val, "normal") == 0 ? 1 : 0;
+        else if (strcmp(key, "dim") == 0)
+            c->dim = atoi(val);
         else if (strcmp(key, "blur") == 0)
             c->blur_close = atoi(val) != 0;
         else if (strcmp(key, "pos") == 0) {
@@ -582,6 +593,8 @@ static void cfg_load(cfg_t *c) {
     if (c->pen > PEN_MAX) c->pen = PEN_MAX;
     if (c->txt < TXT_MIN) c->txt = TXT_MIN;
     if (c->txt > TXT_MAX) c->txt = TXT_MAX;
+    if (c->dim < 0) c->dim = 0;
+    if (c->dim > 100) c->dim = 100;
 }
 
 /* printf уважает локаль (в ru_RU дробь — запятая), а в конфиге нужна точка */
@@ -618,6 +631,7 @@ static void cfg_save(const cfg_t *c) {
     fprintf(f, "window=%s\n", c->wintype ? "normal" : "dialog");
     fprintf(f, "pos=%s\n", POS_NAMES[c->pos]);
     fprintf(f, "blur=%d\n", c->blur_close ? 1 : 0);
+    fprintf(f, "dim=%d\n", c->dim);
     fclose(f);
     if (rename(tmp, path) != 0)
         unlink(tmp);
@@ -1093,6 +1107,8 @@ static void sel_full(sel_t *s) {
     XFlush(dpy);
 }
 
+static int dim_percent = 70;   /* яркость затемнения в процентах */
+
 static rect_t select_area(img_t *shot) {
     sel_t s = {0};
     s.shot = shot;
@@ -1109,17 +1125,29 @@ static rect_t select_area(img_t *shot) {
                             CWOverrideRedirect | CWBackPixel | CWEventMask, &swa);
 
     s.bright = img_to_ximage(shot);
-    img_t *dim = img_new(shot->w, shot->h);
-    for (size_t i = 0; i < (size_t)shot->w * shot->h; i++) {
-        uint32_t p = shot->px[i];
-        uint32_t r = (p >> 16) & 0xff, g = (p >> 8) & 0xff, b = p & 0xff;
-        r = r * 55 / 100;
-        g = g * 55 / 100;
-        b = b * 55 / 100;
-        dim->px[i] = (r << 16) | (g << 8) | b;
+    int dim_pct = dim_percent;
+    if (dim_pct < 0) dim_pct = 0;
+    if (dim_pct > 100) dim_pct = 100;
+    if (dim_pct == 100) {
+        /* затемнение выключено — тёмная копия не нужна вовсе */
+        s.dark = img_to_ximage(shot);
+    } else {
+        img_t *dim = img_new(shot->w, shot->h);
+        if (dim_pct == 0) {
+            memset(dim->px, 0, (size_t)shot->w * shot->h * sizeof(uint32_t));
+        } else {
+            for (size_t i = 0; i < (size_t)shot->w * shot->h; i++) {
+                uint32_t p = shot->px[i];
+                uint32_t r = (p >> 16) & 0xff, g = (p >> 8) & 0xff, b = p & 0xff;
+                r = r * (uint32_t)dim_pct / 100;
+                g = g * (uint32_t)dim_pct / 100;
+                b = b * (uint32_t)dim_pct / 100;
+                dim->px[i] = (r << 16) | (g << 8) | b;
+            }
+        }
+        s.dark = img_to_ximage(dim);
+        img_free(dim);
     }
-    s.dark = img_to_ximage(dim);
-    img_free(dim);
 
     s.gc = XCreateGC(dpy, s.win, 0, NULL);
     s.xor_gc = XCreateGC(dpy, s.win, 0, NULL);
@@ -2999,6 +3027,8 @@ int main(int argc, char **argv) {
 
     int select_flag = 0;
     int all_screens = 0;
+    int dim_seen = 0;
+    int dim_val = 70;
     int blur_seen = 0;
     int blur_val = 0;
     const char *outpath = NULL;
@@ -3010,6 +3040,14 @@ int main(int argc, char **argv) {
             select_flag = 1;
         } else if (!strcmp(a, "-a") || !strcmp(a, "--all")) {
             all_screens = 1;
+        } else if (!strcmp(a, "--dim")) {
+            if (++i >= argc)
+                die("нужен процент затемнения");
+            dim_seen = 1;
+            dim_val = (int)parse_double(argv[i], 70);
+        } else if (!strncmp(a, "--dim=", 6)) {
+            dim_seen = 1;
+            dim_val = (int)parse_double(a + 6, 70);
         } else if (!strcmp(a, "-B") || !strcmp(a, "--close-on-blur")) {
             blur_seen = 1;
             blur_val = 1;
@@ -3095,6 +3133,11 @@ int main(int argc, char **argv) {
         }
     }
 
+    if (dim_seen)
+        cfg.dim = dim_val;
+    if (cfg.dim < 0) cfg.dim = 0;
+    if (cfg.dim > 100) cfg.dim = 100;
+    dim_percent = cfg.dim;
     if (blur_seen)
         cfg.blur_close = blur_val;
     if (cfg.pen < PEN_MIN) cfg.pen = PEN_MIN;

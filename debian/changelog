@@ -1,3 +1,11 @@
+xsnip (3.14-1) unstable; urgency=medium
+
+  * The screen is dimmed to 70 % of its brightness instead of 55 % (lighter,
+    as requested), and the level is configurable: --dim percent (0..100),
+    saved in the config file. --dim 100 turns dimming off completely.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Wed, 04 Nov 2026 21:00:00 +0300
+
 xsnip (3.13-1) unstable; urgency=medium
 
   * Short alias -B for --close-on-blur (-F belongs to scrot's --file, and -B
