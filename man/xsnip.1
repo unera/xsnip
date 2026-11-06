@@ -1,5 +1,5 @@
 .\" xsnip — screenshot tool with a minimal markup editor
-.TH XSNIP 1 "2026-11-02" "xsnip 3.14" "User Commands"
+.TH XSNIP 1 "2026-11-02" "xsnip 3.15" "User Commands"
 .SH NAME
 xsnip \- take a screenshot of the screen or a region and mark it up
 .SH SYNOPSIS
@@ -40,7 +40,9 @@ written for scrot keeps working.
 .TP
 .B \-s, \-\-select
 Select a region with the mouse. Esc or a rectangle smaller than 5x5 cancels
-the shot (exit status 1).
+the shot (exit status 1). The keyboard focus that was taken for the selection
+window is given back to the window that had it, so the window manager does not
+lose track of the active window.
 .TP
 .B \-a, \-\-all
 Grab the whole virtual screen (all monitors). By default only the screen

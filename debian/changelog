@@ -1,3 +1,13 @@
+xsnip (3.15-1) unstable; urgency=medium
+
+  * The selection window no longer steals the keyboard focus for good: the
+    focus is remembered before it is taken and given back when the selection
+    ends (Esc, a too small rectangle or a finished shot). Before, the focus
+    went nowhere after a cancelled selection and i3 lost track of the active
+    window.
+
+ -- Dmitry Oboukhov <unera@debian.org>  Thu, 05 Nov 2026 09:30:00 +0300
+
 xsnip (3.14-1) unstable; urgency=medium
 
   * The screen is dimmed to 70 % of its brightness instead of 55 % (lighter,

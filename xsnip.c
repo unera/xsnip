@@ -51,7 +51,7 @@
 
 /* ------------------------------------------------------------------ общее */
 
-#define XSNIP_VERSION "3.14"
+#define XSNIP_VERSION "3.15"
 #define NCOLORS 5
 /* Панель и всё, что её составляет, масштабируется от самого высокого монитора:
  * за базу взято 800 px по высоте (как было раньше), дальше линейно. */
@@ -1165,6 +1165,13 @@ static rect_t select_area(img_t *shot) {
     XStoreName(dpy, s.win, "xsnip-select");
     XMapRaised(dpy, s.win);
     XSync(dpy, False);
+
+    /* запоминаем, у кого забираем фокус: без этого после отмены он уходит
+     * в никуда и оконный менеджер теряет, куда возвращать */
+    Window prev_focus = None;
+    int prev_revert = RevertToPointerRoot;
+    XGetInputFocus(dpy, &prev_focus, &prev_revert);
+
     XSetInputFocus(dpy, s.win, RevertToPointerRoot, CurrentTime);
     XGrabPointer(dpy, s.win, True,
                  ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
@@ -1272,6 +1279,20 @@ out:
     XFreeGC(dpy, s.gc);
     XUnloadFont(dpy, fixed);
     XDestroyWindow(dpy, s.win);
+
+    /* вернуть фокус туда, где он был до затемнения */
+    if (prev_focus != None && prev_focus != PointerRoot) {
+        XWindowAttributes pwa;
+        if (XGetWindowAttributes(dpy, prev_focus, &pwa)) {
+            if (pwa.map_state == IsViewable)
+                XSetInputFocus(dpy, prev_focus, prev_revert, CurrentTime);
+            else
+                XSetInputFocus(dpy, PointerRoot, RevertToPointerRoot, CurrentTime);
+        }
+    } else {
+        XSetInputFocus(dpy, PointerRoot, RevertToPointerRoot, CurrentTime);
+    }
+
     XFreeCursor(dpy, cur);
     XDestroyImage(s.bright);
     XDestroyImage(s.dark);
